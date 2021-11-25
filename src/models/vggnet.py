@@ -3,47 +3,16 @@
 import sys
 sys.path.append('../')
 
-from nilearn.image import index_img, smooth_img
-from nilearn.masking import apply_mask
-from nibabel.nifti1 import Nifti1Image
 import os
 import torch
-from torch import Tensor, nn
-from torch.utils.data import DataLoader, Subset, Dataset, TensorDataset
-from torch.utils.data.sampler import WeightedRandomSampler, SubsetRandomSampler
-from torchvision import transforms
 import pytorch_lightning as pl
-import numpy as np
-import glob
-import pandas as pd
-import math
-from functools import partial
 from argparse import ArgumentParser
 from pytorch_lightning.loggers import WandbLogger
 import torch.nn as nn
-import torch.nn.functional as F
-from collections import OrderedDict
 import wandb
 import torchio as tio
-from nilearn.image import crop_img, resample_to_img
-from torch.optim.lr_scheduler import ReduceLROnPlateau, ExponentialLR
+from torch.optim.lr_scheduler import ReduceLROnPlateau, ExponentialLR, CosineAnnealingLR
 from torchmetrics.functional import accuracy
-
-import warnings
-from typing import (
-    Callable,
-    ClassVar,
-    Dict,
-    Iterable,
-    List,
-    NamedTuple,
-    Optional,
-    Sequence,
-    Tuple,
-    Type,
-    Union,
-    Any
-)
 
 from dataloader import *
 
@@ -135,7 +104,7 @@ class VGG(pl.LightningModule):
         return {
             "optimizer": optim,
             "lr_scheduler": {
-                "scheduler": ExponentialLR(optim, gamma=0.9),  # ReduceLROnPlateau(optim, ...),
+                "scheduler": CosineAnnealingLR(optim), #ExponentialLR(optim, gamma=0.9), ReduceLROnPlateau(optim, ...),
                 "monitor": "valid_loss",
             },
         }
@@ -211,7 +180,7 @@ def main(test=False):
 
     print("Starting Wandb...")
 
-    wandb.init(project="deep", name=f"{args.name}-{args.cfg_name}")
+    wandb.init(project="deep", name=f"{args.name}-{args.cfg_name}",settings=wandb.Settings(start_method="fork"))
 
     wandb_logger = WandbLogger()
 
