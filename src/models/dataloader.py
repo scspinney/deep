@@ -76,7 +76,22 @@ class Subsample(object):
         return sample
 
 
-"""Data processing:"""
+
+def class_imbalance_sampler(labels):
+
+    class_sample_count = torch.tensor(
+        [(labels == t).sum() for t in torch.unique(labels, sorted=True)])
+
+    print(f"Class_count: {class_sample_count}")
+
+    weight = 1. / class_sample_count.float()
+
+    samples_weight = torch.tensor([weight[t] for t in labels])
+
+    # Create sampler, dataset, loader
+    sampler = WeightedRandomSampler(samples_weight, len(samples_weight),replacement=True)    
+
+    return sampler, weight
 
 
 class MRIDataModuleIO(pl.LightningDataModule):

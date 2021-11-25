@@ -45,7 +45,7 @@ from typing import (
     Any
 )
 
-from dataloaders import *
+from dataloader import *
 
 
 class VGG(pl.LightningModule):
@@ -56,7 +56,7 @@ class VGG(pl.LightningModule):
         self.features = self.make_layers()
         self.avgpool = nn.AdaptiveAvgPool3d((7, 7, 7))
         self.classifier = nn.Sequential(
-            nn.Linear(64 * 7 * 7 * 7, 4096),
+            nn.Linear(self.hparams.cfg[-2] * 7 * 7 * 7, 4096),
             nn.ReLU(True),
             nn.Dropout(),
             nn.Linear(4096, 4096),
@@ -167,8 +167,9 @@ class VGG(pl.LightningModule):
 
 cfgs = {
     'A': [8, 'M', 16, 'M', 32, 32, 'M', 64, 64, 'M'],
+    'B': [16, 16, 'M', 32, 32, 'M', 64, 64, 'M', 128, 128, 'M', 128, 128, 'M'],
     #'A': [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
-    'B': [64, 64, 'M', 128, 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
+    #'B': [64, 64, 'M', 128, 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
     'D': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M', 512, 512, 512, 'M', 512, 512, 512, 'M'],
     'E': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 256, 'M', 512, 512, 512, 512, 'M', 512, 512, 512, 512, 'M'],
 }
@@ -204,7 +205,6 @@ def main(test=False):
     # model specific args
     parser = VGG.add_model_specific_args(parser)
     args = parser.parse_args()
-    args['cfg'] = cfgs[args['cfg_name']]
 
     # set global seed
     pl.seed_everything(args.seed)
@@ -231,10 +231,11 @@ def main(test=False):
 
     print(f"Input shape used: {dm.max_shape}")
     dict_args = vars(args)
-    dict_args['pos_weight'] = dm.pos_weight
+    dict_args['weight'] = dm.weight
     dict_args['input_shape'] = dm.max_shape
     dict_args['class_names'] = ["control","ALC","ATS","COC","NIC"]
-
+    dict_args['cfg'] = cfgs[dict_args['cfg_name']]
+    
     model = VGG(**dict_args)
 
 
