@@ -49,13 +49,14 @@ from dataloaders import *
 
 
 class VGG(pl.LightningModule):
-    def __init__(self, features, conf):
+    def __init__(self, **kwargs):
         super().__init__()
-        self.save_hyperparameters(conf)
-        self.features = features
-        self.avgpool = nn.AdaptiveAvgPool3d((7,7,7))
+        self.save_hyperparameters()
+
+        self.features = self.make_layers()
+        self.avgpool = nn.AdaptiveAvgPool3d((7, 7, 7))
         self.classifier = nn.Sequential(
-            nn.Linear(512 * 7 * 7 * 7, 4096),
+            nn.Linear(64 * 7 * 7 * 7, 4096),
             nn.ReLU(True),
             nn.Dropout(),
             nn.Linear(4096, 4096),
@@ -63,7 +64,8 @@ class VGG(pl.LightningModule):
             nn.Dropout(),
             nn.Linear(4096, self.hparams.num_classes),
         )
-        #if init_weights:
+        # if init_weights:
+        self.loss = nn.CrossEntropyLoss(self.hparams.weight)
         self._initialize_weights()
 
     def forward(self, x):
@@ -94,15 +96,11 @@ class VGG(pl.LightningModule):
         preds = torch.argmax(torch.softmax(raw_out, dim=1), dim=1)
         acc = accuracy(preds, y)
 
-        #print(f"Train Loss: {loss}")
-        self.log('train_loss', loss)
+        # print(f"Train Loss: {loss}")
+        self.log('train_loss', loss, prog_bar=True)
         self.log('train_acc', acc)
-        wandb.log({"conf_mat_train": wandb.plot.confusion_matrix(probs = None,
-                                                            y_true = y.cpu().detach().numpy(),
-                                                            preds = preds.cpu().detach().numpy(),
-                                                            class_names = self.hparams.class_names)})
-        return loss
 
+        return loss
 
     def evaluate(self, batch, stage=None):
         x = batch['image'][tio.DATA]
@@ -116,7 +114,6 @@ class VGG(pl.LightningModule):
             self.log(f"{stage}_loss", loss, prog_bar=True)
             self.log(f"{stage}_acc", acc, prog_bar=True)
 
-
     def validation_step(self, batch, batch_idx):
         self.evaluate(batch, "val")
 
@@ -126,10 +123,10 @@ class VGG(pl.LightningModule):
     def configure_optimizers(self):
         # self.hparams available because we called self.save_hyperparameters()
         if self.hparams.optim == 'adam':
-            optim = torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate,weight_decay=1e-4)
+            optim = torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate, weight_decay=1e-4)
         elif self.hparams.optim == 'sgd':
             optim = torch.optim.SGD(self.parameters(), lr=self.hparams.learning_rate, weight_decay=1e-4)
-        elif  self.hparams.optim == 'adamw':
+        elif self.hparams.optim == 'adamw':
             optim = torch.optim.AdamW(self.parameters(), lr=self.hparams.learning_rate)
 
         else:
@@ -138,11 +135,10 @@ class VGG(pl.LightningModule):
         return {
             "optimizer": optim,
             "lr_scheduler": {
-                "scheduler": ExponentialLR(optim, gamma=0.9), #ReduceLROnPlateau(optim, ...),
+                "scheduler": ExponentialLR(optim, gamma=0.9),  # ReduceLROnPlateau(optim, ...),
                 "monitor": "valid_loss",
             },
         }
-
 
     @staticmethod
     def add_model_specific_args(parent_parser):
@@ -153,55 +149,29 @@ class VGG(pl.LightningModule):
         parser.add_argument('--optim', type=str, default='adam')
         return parent_parser
 
-
-
-def make_layers(cfg, batch_norm=False):
-    layers = []
-    in_channels = 1
-    for v in cfg:
-        if v == 'M':
-            layers += [nn.MaxPool3d(kernel_size=2, stride=2)]
-        else:
-            conv3d = nn.Conv3d(in_channels, v, kernel_size=3, padding=1)
-            if batch_norm:
-                layers += [conv3d, nn.BatchNorm3d(v), nn.ReLU(inplace=True)]
+    def make_layers(self):
+        layers = []
+        in_channels = 1
+        for v in self.hparams.cfg:
+            if v == 'M':
+                layers += [nn.MaxPool3d(kernel_size=2, stride=2)]
             else:
-                layers += [conv3d, nn.ReLU(inplace=True)]
-            in_channels = v
-    return nn.Sequential(*layers)
+                conv3d = nn.Conv3d(in_channels, v, kernel_size=3, padding=1)
+                if self.hparams.batch_norm:
+                    layers += [conv3d, nn.BatchNorm3d(v), nn.ReLU(inplace=True)]
+                else:
+                    layers += [conv3d, nn.ReLU(inplace=True)]
+                in_channels = v
+        return nn.Sequential(*layers)
 
 
 cfgs = {
-    'A': [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
+    'A': [8, 'M', 16, 'M', 32, 32, 'M', 64, 64, 'M'],
+    #'A': [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
     'B': [64, 64, 'M', 128, 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
     'D': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M', 512, 512, 512, 'M', 512, 512, 512, 'M'],
     'E': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 256, 'M', 512, 512, 512, 512, 'M', 512, 512, 512, 512, 'M'],
 }
-
-
-
-def _vgg(arch, cfg, batch_norm, pretrained, progress, kwargs):
-    if pretrained:
-        kwargs['init_weights'] = False
-    model = VGG(make_layers(cfgs[cfg], batch_norm=batch_norm), kwargs)
-    if pretrained:
-        pass
-       #state_dict = load_state_dict_from_url(model_urls[arch],
-                #                              progress=progress)
-        #model.load_state_dict(state_dict)
-    return model
-
-def vgg11(pretrained=False, progress=True, kwargs={}):
-    r"""VGG 11-layer model (configuration "A") from
-    `"Very Deep Convolutional Networks For Large-Scale Image Recognition" <https://arxiv.org/pdf/1409.1556.pdf>`_
-
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-        progress (bool): If True, displays a progress bar of the download to stderr
-    """
-    return _vgg('vgg11', 'A', False, pretrained, progress, kwargs)
-
-
 
 
 #####################################################################
@@ -213,17 +183,20 @@ def main(test=False):
     # ------------
     print("Parsing arguments...")
     parser = ArgumentParser()
-    parser.add_argument('--data_dir', type=str, default='/Users/sean/Projects/MRI_Deep_Learning/Kamran_Montreal_Data_Share/')
+    parser.add_argument('--data_dir', type=str, default='/scratch/spinney/enigma_drug/data')
     parser.add_argument('--batch_size', default=16, type=int)
     #parser.add_argument('--max_epochs', default=15, type=int)
     parser.add_argument('--num_classes', type=int, default=5)
-    parser.add_argument('--num_workers', type=int, default=4)
-    parser.add_argument('--num_samples', type=int, default=20)
+    parser.add_argument('--num_workers', type=int, default=6)
+    parser.add_argument('--num_samples', type=int, default=-1)
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--format', type=str, default='nifti')
     parser.add_argument('--test', type=bool, default=True)
     parser.add_argument('--cropped', type=bool, default=True)
+    parser.add_argument('--batch_norm', type=bool, default=False)
     parser.add_argument('--augment', nargs='*')
+    parser.add_argument('--cfg_name', type=str, default='A')
+
 
     # trainer specific args
     parser = pl.Trainer.add_argparse_args(parser)
@@ -231,13 +204,14 @@ def main(test=False):
     # model specific args
     parser = VGG.add_model_specific_args(parser)
     args = parser.parse_args()
+    args['cfg'] = cfgs[args['cfg_name']]
 
     # set global seed
     pl.seed_everything(args.seed)
 
     print("Starting Wandb...")
 
-    wandb.init(project="deep", name=args.name)
+    wandb.init(project="deep", name=f"{args.name}-{args.cfg_name}")
 
     wandb_logger = WandbLogger()
 
@@ -259,11 +233,10 @@ def main(test=False):
     dict_args = vars(args)
     dict_args['pos_weight'] = dm.pos_weight
     dict_args['input_shape'] = dm.max_shape
-    dict_args['class_names'] = ["control","ALC","ATS","COC","NIC"] if args.num_classes == 5 else ["control","ALC"]
+    dict_args['class_names'] = ["control","ALC","ATS","COC","NIC"]
 
-    model = vgg11(pretrained=False, progress=True, kwargs=dict_args)
+    model = VGG(**dict_args)
 
-    #model = VGG(dict_args)
 
     slurm = os.environ.get("SLURM_JOB_NUM_NODES")
     num_nodes = int(slurm) if slurm else 1

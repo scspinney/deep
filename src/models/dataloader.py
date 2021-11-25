@@ -79,157 +79,15 @@ class Subsample(object):
 """Data processing:"""
 
 
-def class_imbalance_sampler(labels):
-    # if type(labels) != torch.Tensor:
-    #     labels = torch.tensor(labels)
-    # print(labels.shape)
-
-    class_sample_count = torch.tensor(
-        [(labels == t).sum() for t in torch.unique(labels, sorted=True)])
-
-    print(f"Class_count: {class_sample_count}")
-
-    weight = 1. / class_sample_count.float()
-
-    samples_weight = torch.tensor([weight[t] for t in labels])
-
-    # Create sampler, dataset, loader
-    sampler = WeightedRandomSampler(samples_weight, len(samples_weight),replacement=True)
-
-    pos_weight = torch.tensor(class_sample_count[1] / (class_sample_count[0] + 1e-5), dtype=torch.float)
-
-    return sampler, weight
-
-
-class MRIDataset(Dataset):
-
-    def __init__(self, image_paths: List[str], labels: Tensor, train: bool, transform: List[Callable[[Tensor], Tensor]]):
-        self.labels = labels
-        self.image_paths = image_paths
-        self.transform = transform
-        self.train = train
-
-    def __len__(self):
-        return len(self.image_paths)
-
-    def __getitem__(self, idx):
-        if torch.is_tensor(idx):
-            idx = idx.tolist()
-
-        if type(idx) == torch.Tensor:
-            idx = idx.item()
-
-
-        sample = smooth_img(self.image_paths[idx], fwhm=None)
-
-        # add dim
-        sample = torch.unsqueeze(torch.tensor(sample.get_fdata(), dtype=torch.float64),0)
-        # reshape for channel
-
-        if self.transform:
-            for t in self.transform:
-                sample = t(sample)
-
-        return sample, self.labels[idx]
-
-
-class MRIDataModule(pl.LightningDataModule):
-
-    def __init__(self, data_dir: str, labels: List[int], format: str, batch_size: int, transform: List[str],
+class MRIDataModuleIO(pl.LightningDataModule):
+    def __init__(self, data_dir: str, labels: List[int], format: str, batch_size: int, augment: List[str],
                  mask: str = '', file_paths: List[str] = None, num_workers: int = 1, sampler: bool = True):
         super().__init__()
         self.data_dir = data_dir
-        # self.transform = transforms.Compose([
-        #     transforms.ToTensor(),
-        #     transforms.Normalize((0.1307,), (0.3081,))
-        # ])
         self.labels = torch.tensor(labels)
         self.format = format
         self.n = len(labels)
-        self.n_train = int(self.n-100)
-        self.n_test = 100
-        self.mask = mask
-        self.batch_size = batch_size
-        self.transform = transform
-        self.file_paths = file_paths
-        self.num_workers = num_workers
-
-        self.train_labels = self.labels[:self.n_train]
-        self.test_labels = self.labels[-self.n_test:]
-        self.train_paths = self.file_paths[:self.n_train]
-        self.test_paths = self.file_paths[-self.n_test:]
-        self.sampler = sampler
-
-
-    def setup(self, stage: Optional[str] = None) -> None:
-
-        # Assign train/val datasets for use in dataloaders
-        if stage == 'fit':
-
-
-            indices = list(range(self.n_train))
-            split = int(np.floor(.2 * self.n_train))
-
-            # if True:  # shuflle
-            #     #TODO: setup seed as argument
-            #     np.random.seed(0)
-            #     np.random.shuffle(indices)
-
-            train_indices, val_indices = indices[split:], indices[:split]
-            # Creating PT data samplers and loaders:
-            if self.sampler is not True:
-                self.train_sampler = SubsetRandomSampler(train_indices)
-                self.val_sampler = SubsetRandomSampler(val_indices)
-            else:
-                print("here")
-                self.train_sampler, self.pos_weight = class_imbalance_sampler(self.train_labels[train_indices])
-                #self.val_sampler = SubsetRandomSampler(val_indices)
-
-            t_paths = [self.train_paths[i] for i in train_indices]
-            t_labels = [self.train_labels[i] for i in train_indices]
-            self.train_dataset = MRIDataset(t_paths, t_labels, train=True, transform=self.transform)
-
-            v_paths = [self.train_paths[i] for i in val_indices]
-            v_labels = [self.train_labels[i] for i in val_indices]
-            self.val_dataset = MRIDataset(v_paths, v_labels, train=True, transform=self.transform)
-
-
-        # Assign test dataset for use in dataloader(s)
-        elif stage == 'test':
-            self.test_dataset = MRIDataset(self.test_paths, self.test_labels, train=False, transform=self.transform)
-
-        else:
-            raise NotImplementedError
-
-
-
-            # Optionally...
-            # self.dims = tuple(self.test[0][0].shape)
-
-    def train_dataloader(self):
-        return DataLoader(self.train_dataset, batch_size=self.batch_size, sampler=self.train_sampler,
-                          num_workers=self.num_workers, drop_last=True)
-
-    def val_dataloader(self):
-        return DataLoader(self.val_dataset, batch_size=self.batch_size, #sampler=self.val_sampler,
-                          num_workers=self.num_workers, drop_last=True)
-
-    def test_dataloader(self):
-        return DataLoader(self.test_dataset, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers)
-
-    def predict_dataloader(self):
-        return DataLoader(self.test_dataset, num_workers=self.num_workers)
-
-
-class MRIDataModuleIO(pl.LightningDataModule):
-    def __init__(self, data_dir: str, labels: List[int], format: str, batch_size: int, augment: List[str],
-                 mask: str = '', file_paths: List[str] = None, num_workers: int = 1, sampler: bool=True):
-        super().__init__()
-        self.data_dir = data_dir
-        self.labels = torch.tensor(labels)
-        self.format = format
-        self.n = len(labels)
-        self.n_train = int(.9*self.n)
+        self.n_train = int(.9 * self.n)
         self.n_test = self.n - self.n_train
         self.mask = mask
         self.batch_size = batch_size
@@ -237,7 +95,7 @@ class MRIDataModuleIO(pl.LightningDataModule):
         self.file_paths = file_paths
         self.num_workers = num_workers
 
-        shuffled_ind = np.random.choice(range(self.n),len(range(self.n)),replace=False)
+        shuffled_ind = np.random.choice(range(self.n), len(range(self.n)), replace=False)
 
         self.train_labels = self.labels[shuffled_ind[:self.n_train]]
         self.test_labels = self.labels[shuffled_ind[self.n_train:]]
@@ -253,8 +111,7 @@ class MRIDataModuleIO(pl.LightningDataModule):
             [(self.train_labels == int(t)).sum() for t in torch.unique(self.labels, sorted=True)])
 
         print(f"Class distribution in test set: {class_sample_count_test}")
-        print(f"Class distribution in test set: {class_sample_count_train}")
-
+        print(f"Class distribution in train set: {class_sample_count_train}")
 
     def get_max_shape(self, subjects):
 
@@ -262,11 +119,10 @@ class MRIDataModuleIO(pl.LightningDataModule):
             tio.EnsureShapeMultiple(2)
         ])
 
-        dataset = tio.SubjectsDataset(subjects,transform=preprocess)
+        dataset = tio.SubjectsDataset(subjects, transform=preprocess)
         shapes = np.array([s.spatial_shape for s in dataset])
         self.max_shape = shapes.max(axis=0)
         return self.max_shape
-
 
     def prepare_data(self):
         image_training_paths = self.train_paths
@@ -284,7 +140,7 @@ class MRIDataModuleIO(pl.LightningDataModule):
             self.subjects.append(subject)
 
         self.test_subjects = []
-        for image_path,label in  zip(image_test_paths,label_test):
+        for image_path, label in zip(image_test_paths, label_test):
             subject = tio.Subject(image=tio.ScalarImage(image_path),
                                   label=label)
             self.test_subjects.append(subject)
@@ -292,7 +148,7 @@ class MRIDataModuleIO(pl.LightningDataModule):
     def get_preprocessing_transform(self):
         preprocess = tio.Compose([
             tio.CropOrPad(self.get_max_shape(self.subjects + self.test_subjects)),
-            tio.EnsureShapeMultiple(2),  # for the U-Net
+            tio.EnsureShapeMultiple(2),
             tio.RescaleIntensity((-1, 1)),
         ])
         return preprocess
@@ -300,7 +156,7 @@ class MRIDataModuleIO(pl.LightningDataModule):
     def get_augmentation_transform(self):
 
         if self.augment:
-            augment=[]
+            augment = []
             for a in self.augment:
                 if a == 'affine':
                     augment.append(tio.RandomAffine())
@@ -317,10 +173,8 @@ class MRIDataModuleIO(pl.LightningDataModule):
 
     def setup(self, stage=None):
 
-
-        indices = range(self.n_train) #np.random.choice(range(self.n_train), range(self.n_train), replace=False)
+        indices = range(self.n_train)  # np.random.choice(range(self.n_train), range(self.n_train), replace=False)
         split = int(np.floor(.2 * self.n_train))
-
         train_indices, val_indices = indices[split:], indices[:split]
         # Creating PT data samplers and loaders:
         if self.sampler is not True:
@@ -328,8 +182,7 @@ class MRIDataModuleIO(pl.LightningDataModule):
             self.val_sampler = SubsetRandomSampler(val_indices)
         else:
 
-            self.train_sampler, self.pos_weight = class_imbalance_sampler(self.train_labels[train_indices])
-
+            self.train_sampler, self.weight = class_imbalance_sampler(self.train_labels[train_indices])
 
         train_subjects = [self.subjects[i] for i in train_indices]
         val_subjects = [self.subjects[i] for i in val_indices]
@@ -345,9 +198,9 @@ class MRIDataModuleIO(pl.LightningDataModule):
         self.val_set = tio.SubjectsDataset(val_subjects, transform=self.preprocess)
         self.test_set = tio.SubjectsDataset(self.test_subjects, transform=self.preprocess)
 
-
     def train_dataloader(self):
-        return DataLoader(self.train_set, self.batch_size, sampler=self.train_sampler, num_workers=self.num_workers, drop_last=True)
+        return DataLoader(self.train_set, self.batch_size, sampler=self.train_sampler, num_workers=self.num_workers,
+                          drop_last=True)
 
     def val_dataloader(self):
         return DataLoader(self.val_set, self.batch_size, num_workers=self.num_workers, drop_last=True)
@@ -356,47 +209,31 @@ class MRIDataModuleIO(pl.LightningDataModule):
         return DataLoader(self.test_set, self.batch_size)
 
 
-
-def get_mri_data(data_dir,cropped=False,test=False):
-    if cropped:
-        #name = f"data_split_{'test' if test else ''}_c.csv"
-        name = f"data_split_alc_c.csv"
-        df = pd.read_csv(os.path.join(data_dir, name))
-    else:
-        df = pd.read_csv(os.path.join(data_dir, 'data_split.csv'))
-    file_paths = list(df["filename"].values)
-    labels = list(df["class"].values)
-
-    return file_paths, labels
-
-
-def get_mri_data_beta(N,data_dir,cropped=False,test=False):
-
+def get_mri_data_beta(N, data_dir, cropped=False, test=False):
     name = f"data_split_c.csv"
     df = pd.read_csv(os.path.join(data_dir, name))
     labels = []
 
-    dfg = df.groupby("drug")
+    dfg = df.groupby("class")
     data = []
     for name, subdata in dfg:
         print(f"Group: {name}")
         # shuffle
         K = subdata.shape[0]
-        shuffled_ind = np.random.choice(range(K),len(range(K)),replace=False)
-        #subsample
+        shuffled_ind = np.random.choice(range(K), len(range(K)), replace=False)
+        # subsample
         shuffled_ind = shuffled_ind[:N]
         data.extend(subdata["filename"].values[shuffled_ind])
-        labels.extend(subdata["drug"].values[shuffled_ind])
+        labels.extend(subdata["class"].values[shuffled_ind])
 
     # shuffle
     data = np.array(data).reshape(-1)
-    labels=np.array(labels).reshape(-1)
-    ind = np.random.choice(len(labels),len(labels),replace=False)
+    labels = np.array(labels).reshape(-1)
+    ind = np.random.choice(len(labels), len(labels), replace=False)
 
     labels = labels[ind]
-    data= data[ind]
+    data = data[ind]
 
     assert data.shape[0] == labels.shape[0]
 
     return data, labels
-
