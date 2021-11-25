@@ -60,34 +60,48 @@ class VGG(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         x = batch['image'][tio.DATA]
         y = batch['label']
-        raw_out = self(x)
+        raw_out = self.model(x)
         loss = self.loss(raw_out, y)
         preds = torch.argmax(torch.softmax(raw_out, dim=1), dim=1)
         acc = accuracy(preds, y)
 
         # print(f"Train Loss: {loss}")
-        self.log('train_loss', loss, prog_bar=True)
-        self.log('train_acc', acc)
+        self.log('train_loss', loss, prog_bar=True, on_epoch=True)
+        self.log('train_acc', acc, on_epoch=True)
 
         return loss
 
     def evaluate(self, batch, stage=None):
         x = batch['image'][tio.DATA]
         y = batch['label']
-        raw_out = self(x)
+        raw_out = self.model(x)
         loss = self.loss(raw_out, y)
         preds = torch.argmax(torch.softmax(raw_out, dim=1), dim=1)
         acc = accuracy(preds, y)
 
         if stage:
-            self.log(f"{stage}_loss", loss, prog_bar=True)
-            self.log(f"{stage}_acc", acc, prog_bar=True)
+            self.log(f"{stage}_loss", loss, prog_bar=True, on_epoch=True)
+            self.log(f"{stage}_acc", acc, prog_bar=True, on_epoch=True)
+
+        return torch.cat([y[:,None],preds[:,None]],axis=-1)
 
     def validation_step(self, batch, batch_idx):
         self.evaluate(batch, "val")
 
     def test_step(self, batch, batch_idx):
         self.evaluate(batch, "test")
+
+    def validation_epoch_end(self, validation_step_outputs):
+
+        all_preds = torch.vstack(validation_step_outputs)
+
+        assert all_preds.shape[-1] == 2
+
+        wandb.log({"conf_mat_val": wandb.plot.confusion_matrix(probs = None,
+                                                            y_true = all_preds[:,0].cpu().detach().numpy(),
+                                                            preds = all_preds[:,1].cpu().detach().numpy(),
+                                                            class_names = self.hparams.class_names)})
+
 
     def configure_optimizers(self):
         # self.hparams available because we called self.save_hyperparameters()
