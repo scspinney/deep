@@ -60,7 +60,7 @@ class VGG(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         x = batch['image'][tio.DATA]
         y = batch['label']
-        raw_out = self.model(x)
+        raw_out = self(x)
         loss = self.loss(raw_out, y)
         preds = torch.argmax(torch.softmax(raw_out, dim=1), dim=1)
         acc = accuracy(preds, y)
@@ -68,13 +68,15 @@ class VGG(pl.LightningModule):
         # print(f"Train Loss: {loss}")
         self.log('train_loss', loss, prog_bar=True, on_epoch=True)
         self.log('train_acc', acc, on_epoch=True)
-
+        lr_scheduler = self.lr_schedulers()
+        if lr_scheduler:
+            lr_scheduler.step()
         return loss
 
     def evaluate(self, batch, stage=None):
         x = batch['image'][tio.DATA]
         y = batch['label']
-        raw_out = self.model(x)
+        raw_out = self(x)
         loss = self.loss(raw_out, y)
         preds = torch.argmax(torch.softmax(raw_out, dim=1), dim=1)
         acc = accuracy(preds, y)
@@ -82,8 +84,11 @@ class VGG(pl.LightningModule):
         if stage:
             self.log(f"{stage}_loss", loss, prog_bar=True, on_epoch=True)
             self.log(f"{stage}_acc", acc, prog_bar=True, on_epoch=True)
-
-        return torch.cat([y[:,None],preds[:,None]],axis=-1)
+            wandb.log({"conf_mat_val": wandb.plot.confusion_matrix(probs = None,
+                                                                   y_true = y.cpu().detach().numpy(),
+                                                                   preds = preds.cpu().detach().numpy(),
+                                                                   class_names = self.hparams.class_names)})
+#        return torch.cat([y[:,None],preds[:,None]],axis=-1)
 
     def validation_step(self, batch, batch_idx):
         self.evaluate(batch, "val")
@@ -91,16 +96,16 @@ class VGG(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         self.evaluate(batch, "test")
 
-    def validation_epoch_end(self, validation_step_outputs):
+  #  def validation_epoch_end(self, validation_step_outputs):
 
-        all_preds = torch.vstack(validation_step_outputs)
+ #       all_preds = torch.vstack(validation_step_outputs)
 
-        assert all_preds.shape[-1] == 2
+ #       assert all_preds.shape[-1] == 2
 
-        wandb.log({"conf_mat_val": wandb.plot.confusion_matrix(probs = None,
-                                                            y_true = all_preds[:,0].cpu().detach().numpy(),
-                                                            preds = all_preds[:,1].cpu().detach().numpy(),
-                                                            class_names = self.hparams.class_names)})
+   #     wandb.log({"conf_mat_val": wandb.plot.confusion_matrix(probs = None,
+    #                                                        y_true = all_preds[:,0].cpu().detach().numpy(),
+     #                                                       preds = all_preds[:,1].cpu().detach().numpy(),
+      #                                                      class_names = self.hparams.class_names)})
 
 
     def configure_optimizers(self):
@@ -118,7 +123,7 @@ class VGG(pl.LightningModule):
         return {
             "optimizer": optim,
             "lr_scheduler": {
-                "scheduler": CosineAnnealingLR(optim), #ExponentialLR(optim, gamma=0.9), ReduceLROnPlateau(optim, ...),
+                "scheduler": CosineAnnealingLR(optim,T_max=10, eta_min=0), #ExponentialLR(optim, gamma=0.9), ReduceLROnPlateau(optim, ...),
                 "monitor": "valid_loss",
             },
         }
@@ -150,10 +155,11 @@ class VGG(pl.LightningModule):
 
 cfgs = {
     'A': [8, 'M', 16, 'M', 32, 32, 'M', 64, 64, 'M'],
-    'B': [16, 16, 'M', 32, 32, 'M', 64, 64, 'M', 128, 128, 'M', 128, 128, 'M'],
+    'B': [8, 8, 'M', 16, 16,'M', 32, 32, 'M', 64, 64, 'M'],
+    'C': [16, 16, 'M', 32, 32, 'M', 64, 64, 'M', 128, 128, 'M', 128, 128, 'M'],
     #'A': [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
     #'B': [64, 64, 'M', 128, 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
-    'D': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M', 512, 512, 512, 'M', 512, 512, 512, 'M'],
+    'D': [32, 32, 'M', 64, 64, 'M', 128, 128, 128, 'M', 256, 256, 256, 'M', 256, 256, 256, 'M'],
     'E': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 256, 'M', 512, 512, 512, 512, 'M', 512, 512, 512, 512, 'M'],
 }
 
@@ -227,7 +233,7 @@ def main(test=False):
     trainer = pl.Trainer(default_root_dir="/scratch/spinney/enigma_drug/checkpoints/",
                          gpus=torch.cuda.device_count(),
                          num_nodes=num_nodes,
-                         accelerator='ddp' if num_nodes > 1 else 'dp',
+                         strategy='ddp' if num_nodes > 1 else 'dp',
                          max_epochs=args.max_epochs,
                          log_every_n_steps=10,
                          logger=wandb_logger,
