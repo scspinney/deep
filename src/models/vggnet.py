@@ -199,8 +199,9 @@ def main(test=False):
     pl.seed_everything(args.seed)
 
     print("Starting Wandb...")
+    project_name = f"deep-{'multi_class' if args.num_classes > 2 else 'binary'}"
 
-    wandb.init(project="deep", name=f"{args.name}-{args.cfg_name}",settings=wandb.Settings(start_method="fork"))
+    wandb.init(project=project_name, name=f"{args.name}-{args.cfg_name}",settings=wandb.Settings(start_method="fork"))
 
     wandb_logger = WandbLogger()
 
@@ -212,7 +213,7 @@ def main(test=False):
 
 
     # these are returned shuffled
-    file_paths, labels = get_mri_data_beta(args.num_samples//args.num_classes, args.data_dir, cropped=args.cropped, test=False)
+    file_paths, labels = get_mri_data_beta(args.num_samples, args.num_classes, args.data_dir, cropped=args.cropped, test=False)
 
     dm = MRIDataModuleIO(args.data_dir, labels, args.format, args.batch_size, args.augment, mask, file_paths, args.num_workers)
     dm.prepare_data()
@@ -222,7 +223,7 @@ def main(test=False):
     dict_args = vars(args)
     dict_args['weight'] = dm.weight
     dict_args['input_shape'] = dm.max_shape
-    dict_args['class_names'] = ["control","ALC","ATS","COC","NIC"]
+    dict_args['class_names'] = ["control","ALC","ATS","COC","NIC"] if args.num_classes == 5 else ["control","dependent"]
     dict_args['cfg'] = cfgs[dict_args['cfg_name']]
     
     model = VGG(**dict_args)

@@ -102,7 +102,7 @@ class MRIDataModuleIO(pl.LightningDataModule):
         self.labels = torch.tensor(labels)
         self.format = format
         self.n = len(labels)
-        self.n_train = int(.9 * self.n)
+        self.n_train = int(.8 * self.n)
         self.n_test = self.n - self.n_train
         self.mask = mask
         self.batch_size = batch_size
@@ -221,15 +221,19 @@ class MRIDataModuleIO(pl.LightningDataModule):
         return DataLoader(self.val_set, self.batch_size, num_workers=self.num_workers, drop_last=True)
 
     def test_dataloader(self):
-        return DataLoader(self.test_set, self.batch_size)
+        return DataLoader(self.test_set, self.batch_size, num_workers=self.num_workers)
 
 
-def get_mri_data_beta(N, data_dir, cropped=False, test=False):
+def get_mri_data_beta(num_samples,num_classes, data_dir, cropped=False):
+
+
     name = f"data_split_c.csv"
+    class_name = "dependent" if num_classes == 2 else "class"
+    N = num_samples // num_classes
     df = pd.read_csv(os.path.join(data_dir, name))
     labels = []
 
-    dfg = df.groupby("class")
+    dfg = df.groupby(class_name)
     data = []
     for name, subdata in dfg:
         print(f"Group: {name}")
@@ -239,7 +243,7 @@ def get_mri_data_beta(N, data_dir, cropped=False, test=False):
         # subsample
         shuffled_ind = shuffled_ind[:N]
         data.extend(subdata["filename"].values[shuffled_ind])
-        labels.extend(subdata["class"].values[shuffled_ind])
+        labels.extend(subdata[class_name].values[shuffled_ind])
 
     # shuffle
     data = np.array(data).reshape(-1)
