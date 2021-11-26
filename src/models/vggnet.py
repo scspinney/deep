@@ -155,12 +155,12 @@ class VGG(pl.LightningModule):
 
 cfgs = {
     'A': [8, 'M', 16, 'M', 32, 32, 'M', 64, 64, 'M'],
-    'B': [8, 8, 'M', 16, 16,'M', 32, 32, 'M', 64, 64, 'M'],
-    'C': [16, 16, 'M', 32, 32, 'M', 64, 64, 'M', 128, 128, 'M', 128, 128, 'M'],
+    'B': [8, 8,'M', 8,16, 'M', 16, 32, 32, 'M'],
+    'C': [8, 8, 'M', 16, 16,'M', 32, 32, 'M', 64, 64, 'M'],
     #'A': [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
     #'B': [64, 64, 'M', 128, 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
-    'D': [32, 32, 'M', 64, 64, 'M', 128, 128, 128, 'M', 256, 256, 256, 'M', 256, 256, 256, 'M'],
-    'E': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 256, 'M', 512, 512, 512, 512, 'M', 512, 512, 512, 512, 'M'],
+    'D': [16, 16, 'M', 32, 32, 'M', 64, 64, 'M', 128, 128, 'M', 128, 128, 'M'],
+    'E':[32, 32, 'M', 64, 64, 'M', 128, 128, 128, 'M', 256, 256, 256, 'M', 256, 256, 256, 'M']
 }
 
 
@@ -230,7 +230,10 @@ def main(test=False):
 
     slurm = os.environ.get("SLURM_JOB_NUM_NODES")
     num_nodes = int(slurm) if slurm else 1
-    trainer = pl.Trainer(default_root_dir="/scratch/spinney/enigma_drug/checkpoints/",
+
+    default_root_dir = f"/scratch/spinney/enigma_drug/checkpoints/vggnet/"
+
+    trainer = pl.Trainer(default_root_dir=default_root_dir,
                          gpus=torch.cuda.device_count(),
                          num_nodes=num_nodes,
                          strategy='ddp' if num_nodes > 1 else 'dp',
@@ -248,7 +251,6 @@ def main(test=False):
     # testing
     # ------------
 
-    dm.setup(stage='test')
     trainer.test(datamodule=dm)
 
 
