@@ -213,7 +213,7 @@ def main(test=False):
 
 
     # these are returned shuffled
-    file_paths, labels = get_mri_data_beta(args.num_samples, args.num_classes, args.data_dir, cropped=args.cropped, test=False)
+    file_paths, labels = get_mri_data_beta(args.num_samples, args.num_classes, args.data_dir, cropped=args.cropped)
 
     dm = MRIDataModuleIO(args.data_dir, labels, args.format, args.batch_size, args.augment, mask, file_paths, args.num_workers)
     dm.prepare_data()
