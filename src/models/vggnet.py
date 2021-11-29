@@ -24,15 +24,7 @@ class VGG(pl.LightningModule):
 
         self.features = self.make_layers()
         self.avgpool = nn.AdaptiveAvgPool3d((7, 7, 7))
-        self.classifier = nn.Sequential(
-            nn.Linear(self.hparams.cfg[-2] * 7 * 7 * 7, 4096),
-            nn.ReLU(True),
-            nn.Dropout(),
-            nn.Linear(4096, 4096),
-            nn.ReLU(True),
-            nn.Dropout(),
-            nn.Linear(4096, self.hparams.num_classes),
-        )
+        self.classifier = self.make_classifier()
         # if init_weights:
         self.loss = nn.CrossEntropyLoss(self.hparams.weight)
         self._initialize_weights()
@@ -153,6 +145,19 @@ class VGG(pl.LightningModule):
         return nn.Sequential(*layers)
 
 
+
+    def make_classifier(self):
+
+        return nn.Sequential(nn.Linear(self.hparams.cfg[-2] * 7 * 7 * 7, self.hparams.classifier_cfg[0]),
+                             nn.ReLU(True),
+                             nn.Dropout(),
+                             nn.Linear(self.hparams.classifier_cfg[0], self.hparams.classifier_cfg[1]),
+                             nn.ReLU(True),
+                             nn.Dropout(),
+                             nn.Linear(self.hparams.classifier_cfg[1], self.hparams.num_classes))
+
+
+
 cfgs = {
     'A': [8, 'M', 16, 'M', 32, 32, 'M', 64, 64, 'M'],
     'B': [8, 8,'M', 8,16, 'M', 16, 32, 32, 'M'],
@@ -163,6 +168,9 @@ cfgs = {
     'E':[32, 32, 'M', 64, 64, 'M', 128, 128, 128, 'M', 256, 256, 256, 'M', 256, 256, 256, 'M']
 }
 
+classifiers = {'A' : [128,64],
+               'B' : [256,256],
+               'C' : [4096,4096]}
 
 #####################################################################
 def main(test=False):
@@ -186,6 +194,7 @@ def main(test=False):
     parser.add_argument('--batch_norm', type=bool, default=False)
     parser.add_argument('--augment', nargs='*')
     parser.add_argument('--cfg_name', type=str, default='A')
+    parser.add_argument('--classifier_cfg', type=str, default='A')
 
 
     # trainer specific args
@@ -225,6 +234,7 @@ def main(test=False):
     dict_args['input_shape'] = dm.max_shape
     dict_args['class_names'] = ["control","ALC","ATS","COC","NIC"] if args.num_classes == 5 else ["control","dependent"]
     dict_args['cfg'] = cfgs[dict_args['cfg_name']]
+    dict_args['classifier_cfg'] = cfgs[dict_args['classifier_cfg']]
     
     model = VGG(**dict_args)
 
