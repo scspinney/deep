@@ -29,6 +29,7 @@ import torch.nn.functional as F
 from collections import OrderedDict
 import wandb
 import torchio as tio
+import json
 
 from nilearn.image import crop_img, resample_to_img
 
@@ -160,6 +161,14 @@ class MRIDataModuleIO(pl.LightningDataModule):
                                   label=label)
             self.test_subjects.append(subject)
 
+        # save train/test sets
+        with open(os.path.join(self.data_dir,"train_fnames.txt"), "w") as fp:
+            json.dump(image_training_paths, fp)
+
+        with open(os.path.join(self.data_dir,"test_fnames.txt"), "w") as fp:
+            json.dump(image_test_paths, fp)
+
+
     def get_preprocessing_transform(self):
         preprocess = tio.Compose([
             tio.CropOrPad(self.get_max_shape(self.subjects + self.test_subjects)),
@@ -228,7 +237,7 @@ def get_mri_data_beta(num_samples,num_classes, data_dir, cropped=False):
 
 
     name = f"data_split_c.csv"
-    class_name = "dependent" if num_classes == 2 else "class"
+    class_name = "dep" if num_classes == 2 else "class"
     N = num_samples // num_classes
     df = pd.read_csv(os.path.join(data_dir, name))
     labels = []
