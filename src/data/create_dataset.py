@@ -24,7 +24,8 @@ it looks like the same subject with perhaps a different run number... but hard t
 
 def create_dataset(main_path,demo_path):
 
-    demo = pd.read_excel(demo_path)
+
+    demo = pd.read_excel(os.path.join(main_path,demo_path))
     print(demo.head())
 
     # gather images and check if it exists in demo file
@@ -38,9 +39,9 @@ def create_dataset(main_path,demo_path):
     subjects_with_no_mri = 0
     subjects = demo["Subject"].tolist()
     not_found_studies = []
-    dependents = {'dep': [], 'ind': []}
-
+    data = []
     for imgp in img_paths:
+        row = {'dep': 0, 'drug': 0, 'age': 0, 'sex': 0, 'filename': '', 'study': ''}
         bfile = imgp.split('/')[-1][6:-4]
 
         study = imgp.split('/')[-2]
@@ -69,16 +70,19 @@ def create_dataset(main_path,demo_path):
                 found_total += 1
                 # found_study[study]+=1
                 found = True
-                dep = demo["Dependent any drug"][demo["Subject"] == sub].values
-                # print(f"{dep}")
-                if dep == 1:
-                    dependents["dep"].append(imgp)
-                elif dep == 0:
-                    dependents["ind"].append(imgp)
-                else:
-                    print(f"Problem finding dependency information for {imgp}.")
-
+                dep = demo["Dependent on Primary Drug "][demo["Subject"] == sub].values[0]
+                drug = demo["Primary Drug"][demo["Subject"] == sub].values[0]
+                sex = demo["Sex"][demo["Subject"] == sub].values[0]
+                age = demo["Age"][demo["Subject"] == sub].values[0]
+                row['sex'] = sex
+                row['age'] = age
+                row["dep"] = dep
+                row["drug"] = drug
+                row["filename"] = imgp
+                row['study'] = study
+                data.append(row)
                 break
+
         if not found:
             print(f"Did not find subject {bfile} in demo file. Study: {study}")
             not_found_studies.append(study)
@@ -94,20 +98,21 @@ def create_dataset(main_path,demo_path):
         if study not in demo["Study ID"].unique():
             print(f"Study {study} does not appear to exist in the demo file.")
 
-    print("Demographic information on retrieved data:")
-    print(f"Number of dependent drug users (any drug): {len(dependents['dep'])}, Number of not dependent: {len(dependents['ind'])}")
+    #print("Demographic information on retrieved data:")
+    #print(f"Number of dependent drug users (any drug): {len(data['dep'])}, Number of not dependent: {len(dependents['ind'])}")
 
     # write out file with dataset split
     outname = os.path.join(main_path, "data_split.csv")
+    df = pd.DataFrame(data)
 
-    with open(outname, 'w') as out_file:
-        out_file.write("filename,dependent\n")
-        for row in dependents['dep']:
-            parsed_line = f"{row},1\n"
-            out_file.write(parsed_line)
-        for row in dependents['ind']:
-            parsed_line = f"{row},0\n"
-            out_file.write(parsed_line)
+    # create a class column for control versus which drug dependence
+    df["class"] = 0
+    df["class"] = df.apply(lambda row: 0 if row['dep'] == 0 else row['drug'], axis=1)
+
+    #df['filename'] = df['filename'].apply(lambda x: rename(x))
+
+    df.to_csv(outname,index=None)
+
 
 
 if __name__ == '__main__':
@@ -115,8 +120,8 @@ if __name__ == '__main__':
 
 
     parser = ArgumentParser()
-    parser.add_argument('--main_path', type=str)
-    parser.add_argument('--demo_fname', type=str)
+    parser.add_argument('--main_path', type=str, default='/Users/sean/Projects/MRI_Deep_Learning/Kamran_Montreal_Data_Share')
+    parser.add_argument('--demo_fname', type=str, default='Mega-Analysis_demographic_data.xls')
 
     args = parser.parse_args()
 
