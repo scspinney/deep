@@ -124,6 +124,7 @@ def prepare_data(data_dir, file_paths, mask):
 def prepare_data_c(data_dir, file_paths, mask):
 
     max_shape = (0,0,0)
+    filenames = []
     for index, image_path in enumerate(file_paths):
         print(f"Processing {index/len(file_paths)}...")
         # load image and remove nan and inf values.
@@ -140,8 +141,9 @@ def prepare_data_c(data_dir, file_paths, mask):
         print(f"Out shape: {image.shape}")
         outname = path.split('.')[0] + '_c.mgz'
         image.to_filename(outname)
+        filenames.append(outname)
 
-    return max_shape
+    return max_shape, filenames
 
 
 def get_mri_data(data_dir,label):
@@ -172,13 +174,19 @@ def main(test=False):
     # # parser = DL1Classifier.add_model_specific_args(parser)
     # args = parser.parse_args()
 
-    data_dir = '/scratch/spinney/enigma_drug/data/'
-    #@data_dir = '/Users/sean/Projects/MRI_Deep_Learning/Kamran_Montreal_Data_Share/'
+    #data_dir = '/scratch/spinney/enigma_drug/data/'
+    data_dir = '/Users/sean/Projects/MRI_Deep_Learning/Kamran_Montreal_Data_Share/'
     label = "class"
     file_paths, labels = get_mri_data(data_dir,label)
     mask = ''
 
-    out_dims = prepare_data_c(data_dir,file_paths,mask)
+    out_dims, file_paths_c = prepare_data_c(data_dir,file_paths,mask)
+
+    # create new data file with croppped
+    print(f"Creating new cropped data_split file in {data_dir}")
+    df = pd.read_csv(os.path.join(data_dir, 'data_split.csv'))
+    df["filename"] = file_paths_c
+    df.to_csv(os.path.join(data_dir,"data_split_c.csv"))
 
 
     print(f"Completed resizing/cropping images to dimensions: {out_dims}")
