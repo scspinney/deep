@@ -163,10 +163,10 @@ class MRIDataModuleIO(pl.LightningDataModule):
 
         # save train/test sets
         with open(os.path.join(self.data_dir,"train_fnames.txt"), "w") as fp:
-            json.dump(image_training_paths, fp)
+            json.dump(list(image_training_paths), fp)
 
         with open(os.path.join(self.data_dir,"test_fnames.txt"), "w") as fp:
-            json.dump(image_test_paths, fp)
+            json.dump(list(image_test_paths), fp)
 
 
     def get_preprocessing_transform(self):

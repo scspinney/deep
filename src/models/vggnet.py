@@ -234,10 +234,9 @@ def main(test=False):
     dict_args['input_shape'] = dm.max_shape
     dict_args['class_names'] = ["control","ALC","ATS","COC","NIC"] if args.num_classes == 5 else ["control","dependent"]
     dict_args['cfg'] = cfgs[dict_args['cfg_name']]
-    dict_args['classifier_cfg'] = cfgs[dict_args['classifier_cfg']]
+    dict_args['classifier_cfg'] = classifiers[dict_args['classifier_cfg']]
     
     model = VGG(**dict_args)
-
 
     slurm = os.environ.get("SLURM_JOB_NUM_NODES")
     num_nodes = int(slurm) if slurm else 1

@@ -62,6 +62,10 @@ def create_dataset(main_path,demo_path):
         elif study == "COC112":
             bfile = "_".join(bfile.split('_')[1:3])
 
+        if bfile[-2:] == '_c':
+            print(f"Renaming subject cropped: {bfile}")
+            bfile = bfile[-2:]
+
         for i, sub in enumerate(subjects):
             if str(sub) in bfile or bfile in str(sub):
                 # print(f"Sub: {sub}, i: {i}, bfile: {bfile}")
@@ -102,13 +106,13 @@ def create_dataset(main_path,demo_path):
     #print(f"Number of dependent drug users (any drug): {len(data['dep'])}, Number of not dependent: {len(dependents['ind'])}")
 
     # write out file with dataset split
-    outname = os.path.join(main_path, "data_split.csv")
+    outname = os.path.join(main_path, "data_split_c.csv")
     df = pd.DataFrame(data)
 
     # create a class column for control versus which drug dependence
     df["class"] = 0
     df["class"] = df.apply(lambda row: 0 if row['dep'] == 0 else row['drug'], axis=1)
-
+    print(f"Distribution of classes: {df['class'].value_counts()}")
     #df['filename'] = df['filename'].apply(lambda x: rename(x))
 
     df.to_csv(outname,index=None)
@@ -120,7 +124,7 @@ if __name__ == '__main__':
 
 
     parser = ArgumentParser()
-    parser.add_argument('--main_path', type=str, default='/Users/sean/Projects/MRI_Deep_Learning/Kamran_Montreal_Data_Share')
+    parser.add_argument('--main_path', type=str, default='/scratch/spinney/enigma')
     parser.add_argument('--demo_fname', type=str, default='Mega-Analysis_demographic_data.xls')
 
     args = parser.parse_args()
