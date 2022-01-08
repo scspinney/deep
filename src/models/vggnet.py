@@ -13,7 +13,7 @@ import wandb
 import torchio as tio
 from torch.optim.lr_scheduler import ReduceLROnPlateau, ExponentialLR, CosineAnnealingLR
 from torchmetrics.functional import accuracy
-
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from dataloader import *
 
 
@@ -243,18 +243,21 @@ def main(test=False):
     num_nodes = int(slurm) if slurm else 1
 
     default_root_dir = f"/scratch/spinney/enigma_drug/checkpoints/vggnet/"
+    early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=0.00, patience=5, verbose=False, mode="max")
 
     trainer = pl.Trainer(default_root_dir=default_root_dir,
                          gpus=torch.cuda.device_count(),
                          num_nodes=num_nodes,
                          strategy='ddp' if num_nodes > 1 else 'dp',
                          max_epochs=args.max_epochs,
-                         log_every_n_steps=10,
+                         check_val_every_n_epoch=1,
+                         #log_every_n_steps=10,
                          logger=wandb_logger,
-                         replace_sampler_ddp=False)#,
-                         #precision=16)
-                         #early_stop_callback=False)
-                         #callbacks=[early_stopping_callback])
+                         replace_sampler_ddp=False,
+                         early_stop_callback=True,
+                         callbacks=[early_stop_callback])
+                         # precision=16)
+
 
     trainer.fit(model, dm)
 

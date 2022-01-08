@@ -62,6 +62,9 @@ def create_dataset(main_path,demo_path):
         elif study == "COC112":
             bfile = "_".join(bfile.split('_')[1:3])
 
+        if "CANN" in study:
+            print("stop")
+
         for i, sub in enumerate(subjects):
             if str(sub) in bfile or bfile in str(sub):
                 # print(f"Sub: {sub}, i: {i}, bfile: {bfile}")
