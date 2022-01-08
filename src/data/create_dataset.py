@@ -108,7 +108,7 @@ def create_dataset(main_path,demo_path):
     #print(f"Number of dependent drug users (any drug): {len(data['dep'])}, Number of not dependent: {len(dependents['ind'])}")
 
     # write out file with dataset split
-    outname = os.path.join(main_path, "data_split_c.csv")
+    outname = os.path.join(main_path, "data_split.csv")
     df = pd.DataFrame(data)
 
     # create a class column for control versus which drug dependence
