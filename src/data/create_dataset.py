@@ -63,12 +63,9 @@ def create_dataset(main_path,demo_path):
             bfile = "_".join(bfile.split('_')[1:3])
 
 
-        if "CANN" in study:
-            print("stop")
-
         if bfile[-2:] == '_c':
             print(f"Renaming subject cropped: {bfile}")
-            bfile = bfile[-2:]
+            bfile = bfile[:-2]
 
 
         for i, sub in enumerate(subjects):
