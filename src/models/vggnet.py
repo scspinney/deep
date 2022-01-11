@@ -28,10 +28,11 @@ class VGG(pl.LightningModule):
         # if init_weights:
         self.loss = nn.CrossEntropyLoss(self.hparams.weight)
         self._initialize_weights()
+        self.n_size = self._get_block_output(self.hparams.input_shape)
 
     def forward(self, x):
         x = self.features(x)
-        x = self.avgpool(x)
+        #x = self.avgpool(x)
         x = torch.flatten(x, 1)
         x = self.classifier(x)
         return x
@@ -76,11 +77,8 @@ class VGG(pl.LightningModule):
         if stage:
             self.log(f"{stage}_loss", loss, prog_bar=True, on_epoch=True)
             self.log(f"{stage}_acc", acc, prog_bar=True, on_epoch=True)
-            wandb.log({"conf_mat_val": wandb.plot.confusion_matrix(probs = None,
-                                                                   y_true = y.cpu().detach().numpy(),
-                                                                   preds = preds.cpu().detach().numpy(),
-                                                                   class_names = self.hparams.class_names)})
-#        return torch.cat([y[:,None],preds[:,None]],axis=-1)
+
+        return {'y':y,'preds': preds}
 
     def validation_step(self, batch, batch_idx):
         self.evaluate(batch, "val")
@@ -88,16 +86,26 @@ class VGG(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         self.evaluate(batch, "test")
 
-  #  def validation_epoch_end(self, validation_step_outputs):
+   def validation_epoch_end(self, validation_step_outputs):
 
- #       all_preds = torch.vstack(validation_step_outputs)
+       all_preds = torch.vstack([x['preds'] for x in validation_step_outputs])
+       all_y = torch.vstack([x['y'] for x in validation_step_outputs])
 
- #       assert all_preds.shape[-1] == 2
+       wandb.log({"conf_mat_val": wandb.plot.confusion_matrix(probs=None,
+                                                               y_true=all_y.cpu().detach().numpy(),
+                                                               preds=all_preds.cpu().detach().numpy(),
+                                                               class_names=self.hparams.class_names)})
 
-   #     wandb.log({"conf_mat_val": wandb.plot.confusion_matrix(probs = None,
-    #                                                        y_true = all_preds[:,0].cpu().detach().numpy(),
-     #                                                       preds = all_preds[:,1].cpu().detach().numpy(),
-      #                                                      class_names = self.hparams.class_names)})
+    def test_epoch_end(self, test_step_outputs):
+
+        all_preds = torch.vstack([x['preds'] for x in test_step_outputs])
+        all_y = torch.vstack([x['y'] for x in test_step_outputs])
+
+        wandb.log({"conf_mat_test": wandb.plot.confusion_matrix(probs=None,
+                                                               y_true=all_y.cpu().detach().numpy(),
+                                                               preds=all_preds.cpu().detach().numpy(),
+                                                               class_names=self.hparams.class_names)})
+
 
 
     def configure_optimizers(self):
@@ -148,13 +156,24 @@ class VGG(pl.LightningModule):
 
     def make_classifier(self):
 
-        return nn.Sequential(nn.Linear(self.hparams.cfg[-2] * 7 * 7 * 7, self.hparams.classifier_cfg[0]),
+        return nn.Sequential(#nn.Linear(self.hparams.cfg[-2] * 7 * 7 * 7, self.hparams.classifier_cfg[0]),
+                             nn.Linear(self.n_size, self.hparams.classifier_cfg[0]),
                              nn.ReLU(True),
                              nn.Dropout(),
                              nn.Linear(self.hparams.classifier_cfg[0], self.hparams.classifier_cfg[1]),
                              nn.ReLU(True),
                              nn.Dropout(),
                              nn.Linear(self.hparams.classifier_cfg[1], self.hparams.num_classes))
+
+    def _get_block_output(self,shape):
+        self.eval()
+        batch_size=1
+        input = torch.autograd.Variable(torch.rand(batch_size,*shape))
+        input = torch.unsqueeze(input,0)
+        output_feat = self.features(input)
+        n_size = output_feat.data.view(batch_size,-1).size(1)
+        print(f"n_size: {n_size}")
+        return n_size
 
 
 
