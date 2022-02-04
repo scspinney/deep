@@ -90,7 +90,7 @@ def class_imbalance_sampler(labels):
     samples_weight = torch.tensor([weight[t] for t in labels])
 
     # Create sampler, dataset, loader
-    sampler = WeightedRandomSampler(samples_weight, len(samples_weight),replacement=True)    
+    sampler = WeightedRandomSampler(samples_weight, len(samples_weight),replacement=True)
 
     return sampler, weight
 
@@ -234,7 +234,6 @@ class MRIDataModuleIO(pl.LightningDataModule):
 
 
 def get_mri_data_beta(num_samples,num_classes, data_dir, cropped=False):
-
 
     name = f"data_split_c.csv"
     class_name = "dep" if num_classes == 2 else "class"
