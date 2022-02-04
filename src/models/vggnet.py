@@ -23,11 +23,12 @@ class VGG(pl.LightningModule):
 
         self.features = self.make_layers()
         self.avgpool = nn.AdaptiveAvgPool3d((7, 7, 7))
+        self.n_size = self._get_block_output(self.hparams.input_shape)
         self.classifier = self.make_classifier()
         # if init_weights:
         self.loss = nn.CrossEntropyLoss(self.hparams.weight)
         self._initialize_weights()
-        self.n_size = self._get_block_output(self.hparams.input_shape)
+
 
     def forward(self, x):
         x = self.features(x)
@@ -171,7 +172,7 @@ class VGG(pl.LightningModule):
         input = torch.unsqueeze(input, 0)
         output_feat = self.features(input)
         n_size = output_feat.data.view(batch_size, -1).size(1)
-        print(f"n_size: {n_size}")
+        print(f"Block output size: {n_size}")
         return n_size
 
 
@@ -197,11 +198,12 @@ def main():
     print("Parsing arguments...")
     parser = ArgumentParser()
     parser.add_argument('--data_dir', type=str, default='/Users/sean/Projects/deep/dataset')
-    parser.add_argument('--batch_size', default=16, type=int)
+    parser.add_argument('--batch_size', default=4, type=int)
     # parser.add_argument('--max_epochs', default=15, type=int)
     parser.add_argument('--num_classes', type=int, default=5)
     parser.add_argument('--num_workers', type=int, default=6)
     parser.add_argument('--num_samples', type=int, default=-1)
+    parser.add_argument('--input_shape', type=int, default=96)
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--format', type=str, default='nifti')
     parser.add_argument('--debug', type=bool, default=True)
@@ -233,18 +235,22 @@ def main():
     if args.num_samples == -1:
         args.num_samples = -1 * args.num_classes
 
+    if isinstance(args.input_shape,int):
+        args.input_shape = (args.input_shape,
+                            args.input_shape,
+                            args.input_shape)
+
     # these are returned shuffled
     file_paths, labels = get_mri_data_beta(args.num_samples, args.num_classes, args.data_dir, cropped=args.cropped)
 
     dm = MRIDataModuleIO(args.data_dir, labels, args.format, args.batch_size, args.augment, mask, file_paths,
-                         args.num_workers)
-    dm.prepare_data()
+                         args.num_workers, args.input_shape)
     dm.setup(stage='fit')
 
-    print(f"Input shape used: {dm.max_shape}")
+    print(f"Input shape used: {args.input_shape}")
     dict_args = vars(args)
     dict_args['weight'] = dm.weight
-    dict_args['input_shape'] = dm.max_shape
+    dict_args['input_shape'] = args.input_shape
     dict_args['class_names'] = ["control", "ALC", "ATS", "COC", "NIC"] if args.num_classes == 5 else ["control",
                                                                                                       "dependent"]
     dict_args['cfg'] = cfgs[dict_args['cfg_name']]
@@ -269,7 +275,7 @@ def main():
         # log_every_n_steps=10,
         logger=wandb_logger,
         replace_sampler_ddp=False,
-        early_stop_callback=True,
+        #early_stop_callback=True,
         callbacks=[early_stop_callback]
     )
 
