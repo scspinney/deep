@@ -9,7 +9,6 @@ from argparse import ArgumentParser
 from pytorch_lightning.loggers import WandbLogger
 import torch.nn as nn
 import wandb
-import torchio as tio
 from torch.optim.lr_scheduler import ReduceLROnPlateau, ExponentialLR, CosineAnnealingLR
 from torchmetrics.functional import accuracy
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
@@ -51,7 +50,7 @@ class VGG(pl.LightningModule):
                 nn.init.constant_(m.bias, 0)
 
     def training_step(self, batch, batch_idx):
-        x = batch['image'][tio.DATA]
+        x = batch['image']
         y = batch['label']
         raw_out = self(x)
         loss = self.loss(raw_out, y)
@@ -67,7 +66,7 @@ class VGG(pl.LightningModule):
         return loss
 
     def evaluate(self, batch, stage=None):
-        x = batch['image'][tio.DATA]
+        x = batch['image']
         y = batch['label']
         raw_out = self(x)
         loss = self.loss(raw_out, y)
