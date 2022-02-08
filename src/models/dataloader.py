@@ -217,14 +217,14 @@ class MRIDataModuleIO(pl.LightningDataModule):
             json.dump(list(image_test_paths), fp)
 
     def train_dataloader(self):
-        return DataLoader(self.train_set, self.batch_size, sampler=self.train_sampler, num_workers=self.num_workers,
+        return DataLoader(self.train_set, self.batch_size, sampler=self.train_sampler, num_workers=0,#self.num_workers,
                           drop_last=True)
 
     def val_dataloader(self):
-        return DataLoader(self.val_set, self.batch_size, num_workers=self.num_workers, drop_last=True)
+        return DataLoader(self.val_set, self.batch_size, num_workers=0, drop_last=True)
 
     def test_dataloader(self):
-        return DataLoader(self.test_set, self.batch_size, num_workers=self.num_workers)
+        return DataLoader(self.test_set, self.batch_size, num_workers=0)
 
 
 def get_mri_data_beta(num_samples,num_classes, data_dir, cropped=False):

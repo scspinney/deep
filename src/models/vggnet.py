@@ -50,8 +50,8 @@ class VGG(pl.LightningModule):
                 nn.init.constant_(m.bias, 0)
 
     def training_step(self, batch, batch_idx):
-        x = batch['image']
-        y = batch['label']
+        x = batch[0]
+        y = batch[1]
         raw_out = self(x)
         loss = self.loss(raw_out, y)
         preds = torch.argmax(torch.softmax(raw_out, dim=1), dim=1)
@@ -66,8 +66,8 @@ class VGG(pl.LightningModule):
         return loss
 
     def evaluate(self, batch, stage=None):
-        x = batch['image']
-        y = batch['label']
+        x = batch[0]
+        y = batch[1]
         raw_out = self(x)
         loss = self.loss(raw_out, y)
         preds = torch.argmax(torch.softmax(raw_out, dim=1), dim=1)
@@ -80,14 +80,14 @@ class VGG(pl.LightningModule):
         return {'y': y, 'preds': preds}
 
     def validation_step(self, batch, batch_idx):
-        self.evaluate(batch, "val")
+        return self.evaluate(batch, "val")
 
     def test_step(self, batch, batch_idx):
-        self.evaluate(batch, "test")
+        return self.evaluate(batch, "test")
 
     def validation_epoch_end(self, validation_step_outputs):
-        all_preds = torch.vstack([x['preds'] for x in validation_step_outputs])
-        all_y = torch.vstack([x['y'] for x in validation_step_outputs])
+        all_preds = torch.vstack([x['preds'] for x in validation_step_outputs]).flatten()
+        all_y = torch.vstack([x['y'] for x in validation_step_outputs]).flatten()
 
         wandb.log({"conf_mat_val": wandb.plot.confusion_matrix(probs=None,
                                                                y_true=all_y.cpu().detach().numpy(),
@@ -96,8 +96,8 @@ class VGG(pl.LightningModule):
 
 
     def test_epoch_end(self, test_step_outputs):
-        all_preds = torch.vstack([x['preds'] for x in test_step_outputs])
-        all_y = torch.vstack([x['y'] for x in test_step_outputs])
+        all_preds = torch.vstack([x['preds'] for x in test_step_outputs]).flatten()
+        all_y = torch.vstack([x['y'] for x in test_step_outputs]).flatten()
 
         wandb.log({"conf_mat_test": wandb.plot.confusion_matrix(probs=None,
                                                                 y_true=all_y.cpu().detach().numpy(),
@@ -197,15 +197,15 @@ def main():
     print("Parsing arguments...")
     parser = ArgumentParser()
     parser.add_argument('--data_dir', type=str, default='/Users/sean/Projects/deep/dataset')
-    parser.add_argument('--batch_size', default=4, type=int)
+    parser.add_argument('--batch_size', default=8, type=int)
     # parser.add_argument('--max_epochs', default=15, type=int)
     parser.add_argument('--num_classes', type=int, default=5)
-    parser.add_argument('--num_workers', type=int, default=6)
+    parser.add_argument('--num_workers', type=int, default=2)
     parser.add_argument('--num_samples', type=int, default=-1)
-    parser.add_argument('--input_shape', type=int, default=96)
+    parser.add_argument('--input_shape', type=int, default=128)
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--format', type=str, default='nifti')
-    parser.add_argument('--debug', type=bool, default=True)
+    parser.add_argument('--debug', type=bool, default=False)
     parser.add_argument('--cropped', type=bool, default=True)
     parser.add_argument('--batch_norm', type=bool, default=False)
     parser.add_argument('--augment', nargs='*')
@@ -225,7 +225,7 @@ def main():
     print("Starting Wandb...")
     project_name = f"deep-{'multi_class' if args.num_classes > 2 else 'binary'}"
 
-    mode = "disabled" if args.debug else "enabled"
+    mode = "disabled" if args.debug else "dryrun"
     wandb.init(mode=mode, project=project_name, name=f"{args.name}-{args.cfg_name}",
                settings=wandb.Settings(start_method="fork"))
     wandb_logger = WandbLogger()
@@ -264,7 +264,7 @@ def main():
     early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=0.00, patience=5, verbose=False, mode="max")
 
     trainer = pl.Trainer(
-        fast_dev_run=args.debug,
+       # fast_dev_run=args.debug,
         default_root_dir=default_root_dir,
         gpus=torch.cuda.device_count(),
         num_nodes=num_nodes,
@@ -275,7 +275,8 @@ def main():
         logger=wandb_logger,
         replace_sampler_ddp=False,
         #early_stop_callback=True,
-        callbacks=[early_stop_callback]
+        callbacks=[early_stop_callback],
+        profiler="simple"
     )
 
     trainer.fit(model, dm)
