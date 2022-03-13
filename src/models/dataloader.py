@@ -258,3 +258,49 @@ def get_mri_data_beta(num_samples,num_classes, data_dir, cropped=False):
     assert data.shape[0] == labels.shape[0]
 
     return data, labels
+
+def make_environment(data_dir,input_shape,batch_size):
+
+    name = f"data_split_c.csv"
+    class_name = "dep"    
+    df = pd.read_csv(os.path.join(data_dir, name))
+    dfg = df.groupby(class_name)
+    envs = []
+
+    for name, subdata in dfg:
+        print(f"Group: {name}")
+        # shuffle
+        K = subdata.shape[0]
+        shuffled_ind = np.random.choice(range(K), len(range(K)), replace=False)
+        image_train_paths = np.array(subdata["filename"].values[shuffled_ind])
+        label_train = np.array(subdata[class_name].values[shuffled_ind])
+            
+        envs.append(
+            {
+                    'images': image_train_paths,
+                    'labels': label_train
+            }
+            )
+            
+    return envs
+
+
+def simple_dataloader(image_paths,labels,batch_size,transform):
+
+    train_sampler, weight = class_imbalance_sampler(labels)
+    train_set = ImageDataset(
+        image_files=image_paths, 
+        labels=labels,
+        transform=transform, 
+        reader="NibabelReader"
+        )
+    
+    dataloader = DataLoader(
+        train_set, 
+        batch_size, 
+        sampler=train_sampler, 
+        num_workers=0,
+        drop_last=True,
+    )
+    return dataloader
+
