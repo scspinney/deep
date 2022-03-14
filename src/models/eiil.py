@@ -243,13 +243,13 @@ def split_data_opt(envs, model, n_steps=10000, n_samples=-1, transform=None, bat
     return new_envs
 
 
-def run_eiil(flags, train_dataloader, val_dataloader, test_dataloader, transform):
+def run_eiil(flags, transform):
     final_train_accs = []
     final_test_accs = []
     for restart in range(flags.n_restarts):
         print("Restart", restart)
 
-        # Build environments: if training vgg_pre then use single env with all data        
+        # Build environments: two groups with binary labelled data randomly assigned
         envs = make_environment(flags.data_dir)
         
         # Instantiate the model
@@ -267,11 +267,19 @@ def run_eiil(flags, train_dataloader, val_dataloader, test_dataloader, transform
 
         for step in range(flags.steps):
             for env in envs:
-                #TODO: create batch loop
-                logits = vgg(env['images'])
-                env['nll'] = nll(logits, env['labels'])
-                env['acc'] = mean_accuracy(logits, env['labels'])
-                env['penalty'] = penalty(logits, env['labels'])
+                train_dataloader = simple_dataloader(env['images'],env['labels'],flags.batch_size,transform)
+                logits_env = []
+                labels_env = []
+                for i, (images, labels) in enumerate(train_dataloader):
+                    logits = vgg(images)
+                    logits_env.append(logits)
+                    labels_env.append(labels)                                
+                
+                logits = torch.cat(logits_env,0)
+                labels = torch.cat(labels_env,0)
+                env['nll'] = nll(logits, labels)
+                env['acc'] = mean_accuracy(logits, labels)
+                env['penalty'] = penalty(logits, labels)
 
             train_nll = torch.stack([envs[0]['nll'], envs[1]['nll']]).mean()
             train_acc = torch.stack([envs[0]['acc'], envs[1]['acc']]).mean()
@@ -294,7 +302,7 @@ def run_eiil(flags, train_dataloader, val_dataloader, test_dataloader, transform
             loss.backward()
             optimizer.step()
 
-            test_acc = envs[2]['acc']
+            test_acc = envs[-1]['acc']
             if step % 100 == 0:
                 pretty_print(
                     np.int32(step),
@@ -368,12 +376,12 @@ def main():
     file_paths, labels = get_mri_data_beta(args.num_samples, args.num_classes, args.data_dir, cropped=args.cropped)
     mask = ''
     
-    dm = MRIDataModuleIO(args.data_dir, labels, args.format, args.batch_size, args.augment, mask, file_paths,
-                         args.num_workers, args.input_shape)
-    dm.setup(stage='fit')
-    train_dataloader = dm.train_dataloader
-    val_dataloader = dm.val_dataloader
-    test_dataloader = dm.test_dataloader
+    # dm = MRIDataModuleIO(args.data_dir, labels, args.format, args.batch_size, args.augment, mask, file_paths,
+    #                      args.num_workers, args.input_shape)
+    # dm.setup(stage='fit')
+    # train_dataloader = dm.train_dataloader
+    # val_dataloader = dm.val_dataloader
+    # test_dataloader = dm.test_dataloader
 
     preprocess = Compose(
     [
@@ -382,7 +390,8 @@ def main():
         ResizeWithPadOrCrop(input_shape),
         EnsureType(),
     ])
-    run_eiil(args,train_dataloader, val_dataloader, test_dataloader, preprocess)
+
+    run_eiil(args, preprocess)
 
 if __name__ == '__main__':
     main()
