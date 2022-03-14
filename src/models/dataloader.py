@@ -306,6 +306,8 @@ def make_environment(flags):
 
 
 def simple_dataloader(image_paths,labels,batch_size,transform):
+    if isinstance(labels,np.ndarray):
+        labels = torch.tensor(labels)
 
     train_sampler, weight = class_imbalance_sampler(labels)
     train_set = ImageDataset(

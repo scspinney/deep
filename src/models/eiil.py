@@ -254,8 +254,8 @@ def run_eiil(flags, transform):
         envs = make_environment(flags)
         
         # Instantiate the model
-        vgg_pre = VGG(flags).cuda()
-        vgg = VGG(flags).cuda()
+        vgg_pre = VGG(flags).to(flags.device)
+        vgg = VGG(flags).to(flags.device)
 
         optimizer_pre = optim.Adam(vgg_pre.parameters(), lr=flags.lr)
         optimizer = optim.Adam(vgg.parameters(), lr=flags.lr)
@@ -360,7 +360,7 @@ def main():
     parser.add_argument('--dropout', type=float, default=0.5)
     parser.add_argument('--name', type=str, default='vggnet')
     parser.add_argument('--optim', type=str, default='adam')
-    
+
     # EIIL params
     parser.add_argument('--hidden_dim', type=int, default=256)
     parser.add_argument('--l2_regularizer_weight', type=float,default=0.001)
@@ -392,16 +392,7 @@ def main():
                             args.input_shape,
                             args.input_shape)
 
-    # these are returned shuffled
-    #file_paths, labels = get_mri_data_beta(args.num_samples, args.num_classes, args.data_dir, cropped=args.cropped)
-    #mask = ''
-    
-    # dm = MRIDataModuleIO(args.data_dir, labels, args.format, args.batch_size, args.augment, mask, file_paths,
-    #                      args.num_workers, args.input_shape)
-    # dm.setup(stage='fit')
-    # train_dataloader = dm.train_dataloader
-    # val_dataloader = dm.val_dataloader
-    # test_dataloader = dm.test_dataloader
+    args.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     preprocess = Compose(
     [
