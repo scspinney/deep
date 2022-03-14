@@ -274,20 +274,28 @@ def make_environment(data_dir,input_shape,batch_size):
     sex = np.array(df["sex"].values[shuffled_ind])
     envs = [
         [{
-                'images': image_train_paths[:K//2],
-                'labels': label_train[:K//2],
-                'drug': drug[:K//2],
-                'age': age[:K//2],
-                'sex': sex[:K//2],
-                'class': class_type[:K//2]
+                'images': image_train_paths[:K//2-50],
+                'labels': label_train[:K//2-50],
+                'drug': drug[:K//2-50],
+                'age': age[:K//2-50],
+                'sex': sex[:K//2-50],
+                'class': class_type[:K//2-50]
         }],
         [{
-                'images': image_train_paths[K//2:],
-                'labels': label_train[K//2:],
-                'drug': drug[K//2:],
-                'age': age[K//2:],
-                'sex': sex[K//2:],
-                'class': class_type[K//2:]                
+                'images': image_train_paths[K//2-50:-50],
+                'labels': label_train[K//2-50:-50],
+                'drug': drug[K//2-50:-50],
+                'age': age[K//2-50:-50],
+                'sex': sex[K//2-50:-50],
+                'class': class_type[K//2-50:-50]                
+        }],
+                [{
+                'images': image_train_paths[-100:],
+                'labels': label_train[-100:],
+                'drug': drug[-100:],
+                'age': age[-100:],
+                'sex': sex[-100:],
+                'class': class_type[-100:]                
         }]
         ]
             
