@@ -260,27 +260,36 @@ def get_mri_data_beta(num_samples,num_classes, data_dir, cropped=False):
     return data, labels
 
 def make_environment(data_dir,input_shape,batch_size):
-
+    # dep,drug,age,sex,filename,study,class
     name = f"data_split_c.csv"
     class_name = "dep"    
     df = pd.read_csv(os.path.join(data_dir, name))
-    dfg = df.groupby(class_name)
-    envs = []
-
-    for name, subdata in dfg:
-        print(f"Group: {name}")
-        # shuffle
-        K = subdata.shape[0]
-        shuffled_ind = np.random.choice(range(K), len(range(K)), replace=False)
-        image_train_paths = np.array(subdata["filename"].values[shuffled_ind])
-        label_train = np.array(subdata[class_name].values[shuffled_ind])
-            
-        envs.append(
-            {
-                    'images': image_train_paths,
-                    'labels': label_train
-            }
-            )
+    K = df.shape[0]
+    shuffled_ind = np.random.choice(range(K), len(range(K)), replace=False)
+    image_train_paths = np.array(df["filename"].values[shuffled_ind])
+    label_train = np.array(df[class_name].values[shuffled_ind])
+    drug = np.array(df["drug"].values[shuffled_ind])
+    age = np.array(df["age"].values[shuffled_ind])
+    class_type = np.array(df["class"].values[shuffled_ind])
+    sex = np.array(df["sex"].values[shuffled_ind])
+    envs = [
+        [{
+                'images': image_train_paths[:K//2],
+                'labels': label_train[:K//2],
+                'drug': drug[:K//2],
+                'age': age[:K//2],
+                'sex': sex[:K//2],
+                'class': class_type[:K//2]
+        }],
+        [{
+                'images': image_train_paths[K//2:],
+                'labels': label_train[K//2:],
+                'drug': drug[K//2:],
+                'age': age[K//2:],
+                'sex': sex[K//2:],
+                'class': class_type[K//2:]                
+        }]
+        ]
             
     return envs
 
