@@ -355,6 +355,12 @@ def main():
     parser.add_argument('--cfg_name', type=str, default='A')
     parser.add_argument('--classifier_cfg', type=str, default='A')
 
+    # model params
+    parser.add_argument('--learning_rate', type=float, default=0.001)
+    parser.add_argument('--dropout', type=float, default=0.5)
+    parser.add_argument('--name', type=str, default='vggnet')
+    parser.add_argument('--optim', type=str, default='adam')
+    
     # EIIL params
     parser.add_argument('--hidden_dim', type=int, default=256)
     parser.add_argument('--l2_regularizer_weight', type=float,default=0.001)
