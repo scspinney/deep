@@ -82,8 +82,9 @@ def pretrain_model(flags,envs,model,optimizer_pre,batch_size,transform):
 
 
 class VGG(nn.Module):
-    def __init__(self, **kwargs):
+    def __init__(self, hparams):
         super().__init__()
+        self.hparams = hparams
         self.features = self.make_layers()
         self.avgpool = nn.AdaptiveAvgPool3d((7, 7, 7))
         self.n_size = self._get_block_output(self.hparams.input_shape)
@@ -148,7 +149,7 @@ class VGG(nn.Module):
     def make_layers(self):
         layers = []
         in_channels = 1
-        for v in self.hparams.cfg:
+        for v in cfgs[self.hparams.cfg_name]:
             if v == 'M':
                 layers += [nn.MaxPool3d(kernel_size=2, stride=2)]
             else:
@@ -162,14 +163,15 @@ class VGG(nn.Module):
 
 
     def make_classifier(self):
+        layers = classifiers[self.hparams.classifier_cfg]
         return nn.Sequential(  # nn.Linear(self.hparams.cfg[-2] * 7 * 7 * 7, self.hparams.classifier_cfg[0]),
-            nn.Linear(self.n_size, self.hparams.classifier_cfg[0]),
+            nn.Linear(self.n_size, layers[0]),
             nn.ReLU(True),
             nn.Dropout(),
-            nn.Linear(self.hparams.classifier_cfg[0], self.hparams.classifier_cfg[1]),
+            nn.Linear(layers[0], layers[1]),
             nn.ReLU(True),
             nn.Dropout(),
-            nn.Linear(self.hparams.classifier_cfg[1], self.hparams.num_classes))
+            nn.Linear(layers[1], self.hparams.num_classes))
 
 
     def _get_block_output(self, shape):
@@ -192,8 +194,7 @@ def split_data_opt(envs, model, n_steps=10000, n_samples=-1, transform=None, bat
     
     train_dataloader = simple_dataloader(image_train_paths,label_train,batch_size,transform)
     scale = torch.tensor(1.).cuda().requires_grad_()
-
-    #TODO: batch loop training
+    
     logits_all = []
     loss_all = []
     for i, (images, labels) in enumerate(train_dataloader):
@@ -250,11 +251,11 @@ def run_eiil(flags, transform):
         print("Restart", restart)
 
         # Build environments: two groups with binary labelled data randomly assigned
-        envs = make_environment(flags.data_dir)
+        envs = make_environment(flags)
         
         # Instantiate the model
-        vgg_pre = VGG().cuda()
-        vgg = VGG().cuda()
+        vgg_pre = VGG(flags).cuda()
+        vgg = VGG(flags).cuda()
 
         optimizer_pre = optim.Adam(vgg_pre.parameters(), lr=flags.lr)
         optimizer = optim.Adam(vgg.parameters(), lr=flags.lr)
@@ -320,6 +321,19 @@ def run_eiil(flags, transform):
         print(np.mean(final_test_accs), np.std(final_test_accs))
 
 
+cfgs = {
+    'A': [8, 'M', 16, 'M', 32, 32, 'M', 64, 64, 'M'],
+    'B': [8, 8, 'M', 8, 16, 'M', 16, 32, 32, 'M'],
+    'C': [8, 8, 'M', 16, 16, 'M', 32, 32, 'M', 64, 64, 'M'],
+    # 'A': [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
+    # 'B': [64, 64, 'M', 128, 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
+    'D': [16, 16, 'M', 32, 32, 'M', 64, 64, 'M', 128, 128, 'M', 128, 128, 'M'],
+    'E': [32, 32, 'M', 64, 64, 'M', 128, 128, 128, 'M', 256, 256, 256, 'M', 256, 256, 256, 'M']
+}
+
+classifiers = {'A': [128, 64],
+               'B': [256, 256],
+               'C': [4096, 4096]}
 
 def main():
 
@@ -328,7 +342,7 @@ def main():
     parser.add_argument('--data_dir', type=str, default='/Users/sean/Projects/deep/dataset')
     parser.add_argument('--batch_size', default=8, type=int)
     # parser.add_argument('--max_epochs', default=15, type=int)
-    parser.add_argument('--num_classes', type=int, default=5)
+    parser.add_argument('--num_classes', type=int, default=2)
     parser.add_argument('--num_workers', type=int, default=2)
     parser.add_argument('--num_samples', type=int, default=-1)
     parser.add_argument('--input_shape', type=int, default=128)
@@ -373,8 +387,8 @@ def main():
                             args.input_shape)
 
     # these are returned shuffled
-    file_paths, labels = get_mri_data_beta(args.num_samples, args.num_classes, args.data_dir, cropped=args.cropped)
-    mask = ''
+    #file_paths, labels = get_mri_data_beta(args.num_samples, args.num_classes, args.data_dir, cropped=args.cropped)
+    #mask = ''
     
     # dm = MRIDataModuleIO(args.data_dir, labels, args.format, args.batch_size, args.augment, mask, file_paths,
     #                      args.num_workers, args.input_shape)
@@ -390,7 +404,7 @@ def main():
         ResizeWithPadOrCrop(input_shape),
         EnsureType(),
     ])
-
+    
     run_eiil(args, preprocess)
 
 if __name__ == '__main__':
