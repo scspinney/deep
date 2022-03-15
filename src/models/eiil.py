@@ -93,6 +93,10 @@ class VGG(nn.Module):
         self.features = self.make_layers()
         self.avgpool = nn.AdaptiveAvgPool3d((7, 7, 7))
         self.n_size = self._get_block_output(self.hparams.input_shape)
+
+        if self.hparams.num_classes == 2:
+            self.hparams.num_classes = 1
+
         self.classifier = self.make_classifier()
         # if init_weights:        
         self._initialize_weights()
@@ -351,6 +355,7 @@ def main():
 
     print("Parsing arguments...")
     parser = ArgumentParser()
+    #parser.add_argument('--data_dir', type=str, default='/Users/sean/Projects/deep/dataset')
     parser.add_argument('--data_dir', type=str, default='/scratch/spinney/enigma_drug/data')
     parser.add_argument('--batch_size', default=8, type=int)
     # parser.add_argument('--max_epochs', default=15, type=int)
