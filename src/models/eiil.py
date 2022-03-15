@@ -23,17 +23,17 @@ def pretty_print(*values):
     print("   ".join(str_values))
 
 # Define loss function helpers
-def nll(logits, y, reduction='mean'):
+def nll(logits, y, pos_weight, reduction='mean'):
     #TODO: cross entropy not binary
-    return nn.functional.binary_cross_entropy_with_logits(logits, y, reduction=reduction)
+    return nn.functional.binary_cross_entropy_with_logits(logits, y, pos_weight=pos_weight, reduction=reduction)
 
 def mean_accuracy(logits, y):
     preds = (logits > 0.).float()
     return ((preds - y).abs() < 1e-2).float().mean()
 
-def penalty(logits, y, device):
+def penalty(logits, y, pos_weight, device):
     scale = torch.tensor(1.).to(device).requires_grad_()
-    loss = nll(logits * scale, y)
+    loss = nll(logits * scale, y, pos_weight)
     grad = autograd.grad(loss, [scale], create_graph=True)[0]
     return torch.sum(grad**2)
 
@@ -41,7 +41,7 @@ def pretrain_model(flags,envs,model,optimizer_pre,batch_size,transform):
     n_env = len(envs)
     for step in range(flags.steps):
         for env in envs:
-            train_dataloader = simple_dataloader(env['images'],env['labels'],batch_size,transform)
+            train_dataloader, pos_weight = simple_dataloader(env['images'],env['labels'],batch_size,transform)
             logits_env = []
             labels_env = []
             for i, (images, labels) in enumerate(train_dataloader):
@@ -52,9 +52,9 @@ def pretrain_model(flags,envs,model,optimizer_pre,batch_size,transform):
                 labels_env.append(labels.detach().cpu())
             logits = torch.cat(logits_env,0)
             labels = torch.cat(labels_env,0)
-            env['nll'] = nll(logits, labels)
+            env['nll'] = nll(logits, labels, pos_weight)
             env['acc'] = mean_accuracy(logits, labels)
-            env['penalty'] = penalty(logits, labels, flags.device)
+            env['penalty'] = penalty(logits, labels, pos_weight, flags.device)
             gc.collect()
             torch.cuda.empty_cache()
 
@@ -197,7 +197,7 @@ def split_data_opt(envs, model, device, n_steps=10000, n_samples=-1, transform=N
     label_train = torch.cat([envs[i]['labels'][:n_samples] for i in range(n_env-1)],0)
     print('size of pooled envs: '+str(len(image_train_paths)))
     
-    train_dataloader = simple_dataloader(image_train_paths,label_train,batch_size,transform)
+    train_dataloader, pos_weight = simple_dataloader(image_train_paths,label_train,batch_size,transform)
     scale = torch.tensor(1.).to(device).requires_grad_()
     
     logits_all = []
@@ -205,7 +205,7 @@ def split_data_opt(envs, model, device, n_steps=10000, n_samples=-1, transform=N
     for i, (images, labels) in enumerate(train_dataloader):
         images, labels = images.to(device), labels.to(device)
         logits = model(images)
-        loss = nll(logits * scale, labels, reduction='none')
+        loss = nll(logits * scale, labels, pos_weight,reduction='none')
         logits_all.append(logits.detach().cpu())
         loss_all.append(loss.detach().cpu())
     
@@ -279,7 +279,7 @@ def run_eiil(flags, transform):
         optimizer = optim.Adam(vgg.parameters(), lr=flags.lr)
         for step in range(flags.steps):
             for env in envs:
-                train_dataloader = simple_dataloader(env['images'],env['labels'],flags.batch_size,transform)
+                train_dataloader, pos_weight = simple_dataloader(env['images'],env['labels'],flags.batch_size,transform)
                 logits_env = []
                 labels_env = []
                 for i, (images, labels) in enumerate(train_dataloader):
@@ -290,9 +290,9 @@ def run_eiil(flags, transform):
                 
                 logits = torch.cat(logits_env,0)
                 labels = torch.cat(labels_env,0)
-                env['nll'] = nll(logits, labels)
+                env['nll'] = nll(logits, labels, pos_weight)
                 env['acc'] = mean_accuracy(logits, labels)
-                env['penalty'] = penalty(logits, labels, flags.device)
+                env['penalty'] = penalty(logits, labels, pos_weight,flags.device)
 
             train_nll = torch.stack([envs[0]['nll'], envs[1]['nll']]).mean()
             train_acc = torch.stack([envs[0]['acc'], envs[1]['acc']]).mean()
