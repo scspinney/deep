@@ -30,8 +30,8 @@ def mean_accuracy(logits, y):
     preds = (logits > 0.).float()
     return ((preds - y).abs() < 1e-2).float().mean()
 
-def penalty(logits, y):
-    scale = torch.tensor(1.).cuda().requires_grad_()
+def penalty(logits, y, device):
+    scale = torch.tensor(1.).to(device).requires_grad_()
     loss = nll(logits * scale, y)
     grad = autograd.grad(loss, [scale], create_graph=True)[0]
     return torch.sum(grad**2)
@@ -44,6 +44,7 @@ def pretrain_model(flags,envs,model,optimizer_pre,batch_size,transform):
             logits_env = []
             labels_env = []
             for i, (images, labels) in enumerate(train_dataloader):
+                images, labels = images.to(flags.device), labels.to(flags.device)
                 logits = model(images)
                 logits_env.append(logits)
                 labels_env.append(labels)
@@ -51,13 +52,13 @@ def pretrain_model(flags,envs,model,optimizer_pre,batch_size,transform):
             labels = torch.cat(labels_env,0)
             env['nll'] = nll(logits, labels)
             env['acc'] = mean_accuracy(logits, labels)
-            env['penalty'] = penalty(logits, labels)
+            env['penalty'] = penalty(logits, labels, flags.device)
 
         train_nll = torch.stack([envs[i]['nll'] for i in range(n_env-1)]).mean()
         train_acc = torch.stack([envs[i]['acc'] for i in range(n_env-1)]).mean()
         train_penalty = torch.stack([envs[i]['penalty'] for i in range(n_env-1)]).mean()
 
-        weight_norm = torch.tensor(0.).cuda()
+        weight_norm = torch.tensor(0.).to(flags.device)
         for w in model.parameters():
             weight_norm += w.norm().pow(2)
 
@@ -185,7 +186,7 @@ class VGG(nn.Module):
         return n_size
 
 
-def split_data_opt(envs, model, n_steps=10000, n_samples=-1, transform=None, batch_size=8):
+def split_data_opt(envs, model, device, n_steps=10000, n_samples=-1, transform=None, batch_size=8):
     """Learn soft environment assignment."""
     n_env = len(envs)    
     image_train_paths = torch.cat([envs[i]['images'][:n_samples] for i in range(n_env-1)],0)    
@@ -193,11 +194,12 @@ def split_data_opt(envs, model, n_steps=10000, n_samples=-1, transform=None, bat
     print('size of pooled envs: '+str(len(image_train_paths)))
     
     train_dataloader = simple_dataloader(image_train_paths,label_train,batch_size,transform)
-    scale = torch.tensor(1.).cuda().requires_grad_()
+    scale = torch.tensor(1.).to(device).requires_grad_()
     
     logits_all = []
     loss_all = []
     for i, (images, labels) in enumerate(train_dataloader):
+        images, labels = images.to(device), labels.to(device)
         logits = model(images)
         loss = nll(logits * scale, labels, reduction='none')
         logits_all.append(logits)
@@ -205,7 +207,7 @@ def split_data_opt(envs, model, n_steps=10000, n_samples=-1, transform=None, bat
     
     logits = torch.cat(logits_all,0)
     loss = torch.cat(loss_all,0)
-    env_w = torch.randn(len(logits)).cuda().requires_grad_()
+    env_w = torch.randn(len(logits)).to(device).requires_grad_()
     optimizer = optim.Adam([env_w], lr=0.001)
 
     print('learning soft environment assignments')
@@ -255,23 +257,27 @@ def run_eiil(flags, transform):
         
         # Instantiate the model
         vgg_pre = VGG(flags).to(flags.device)
-        vgg = VGG(flags).to(flags.device)
+        #vgg = VGG(flags).to(flags.device)
 
         optimizer_pre = optim.Adam(vgg_pre.parameters(), lr=flags.lr)
-        optimizer = optim.Adam(vgg.parameters(), lr=flags.lr)
+        #optimizer = optim.Adam(vgg.parameters(), lr=flags.lr)
 
         pretty_print('step', 'train nll', 'train acc', 'train penalty', 'test acc')
 
-        if flags.eiil:
-            vgg_pre = pretrain_model(envs,vgg_pre, optimizer_pre)
+        #if flags.eiil:
+        if True: # flags,envs,model,optimizer_pre,batch_size,transform
+            vgg_pre = pretrain_model(flags,envs,vgg_pre, optimizer_pre,flags.batch_size, transform)
             envs = split_data_opt(envs, vgg_pre, transform)
-
+        
+        vgg = VGG(flags).to(flags.device)
+        optimizer = optim.Adam(vgg.parameters(), lr=flags.lr)
         for step in range(flags.steps):
             for env in envs:
                 train_dataloader = simple_dataloader(env['images'],env['labels'],flags.batch_size,transform)
                 logits_env = []
                 labels_env = []
                 for i, (images, labels) in enumerate(train_dataloader):
+                    images, labels = images.to(flags.device), labels.to(flags.device)
                     logits = vgg(images)
                     logits_env.append(logits)
                     labels_env.append(labels)                                
@@ -280,13 +286,13 @@ def run_eiil(flags, transform):
                 labels = torch.cat(labels_env,0)
                 env['nll'] = nll(logits, labels)
                 env['acc'] = mean_accuracy(logits, labels)
-                env['penalty'] = penalty(logits, labels)
+                env['penalty'] = penalty(logits, labels, flags.device)
 
             train_nll = torch.stack([envs[0]['nll'], envs[1]['nll']]).mean()
             train_acc = torch.stack([envs[0]['acc'], envs[1]['acc']]).mean()
             train_penalty = torch.stack([envs[0]['penalty'], envs[1]['penalty']]).mean()
 
-            weight_norm = torch.tensor(0.).cuda()
+            weight_norm = torch.tensor(0.).to(flags.device)
             for w in vgg.parameters():
                 weight_norm += w.norm().pow(2)
 
@@ -339,7 +345,7 @@ def main():
 
     print("Parsing arguments...")
     parser = ArgumentParser()
-    parser.add_argument('--data_dir', type=str, default='/Users/sean/Projects/deep/dataset')
+    parser.add_argument('--data_dir', type=str, default='/scratch/spinney/enigma_drug/data')
     parser.add_argument('--batch_size', default=8, type=int)
     # parser.add_argument('--max_epochs', default=15, type=int)
     parser.add_argument('--num_classes', type=int, default=2)
@@ -354,6 +360,7 @@ def main():
     parser.add_argument('--augment', nargs='*')
     parser.add_argument('--cfg_name', type=str, default='A')
     parser.add_argument('--classifier_cfg', type=str, default='A')
+    parser.add_argument('--max_epochs', default=40, type=int)
 
     # model params
     parser.add_argument('--learning_rate', type=float, default=0.001)
