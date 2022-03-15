@@ -48,8 +48,8 @@ def pretrain_model(flags,envs,model,optimizer_pre,batch_size,transform):
                 print(f"Batch num: {i}")
                 images, labels = images.to(flags.device), labels.to(flags.device)
                 logits = model(images)
-                logits_env.append(logits)
-                labels_env.append(labels)
+                logits_env.append(logits.detach().cpu())
+                labels_env.append(labels.detach().cpu())
             logits = torch.cat(logits_env,0)
             labels = torch.cat(labels_env,0)
             env['nll'] = nll(logits, labels)
@@ -206,8 +206,8 @@ def split_data_opt(envs, model, device, n_steps=10000, n_samples=-1, transform=N
         images, labels = images.to(device), labels.to(device)
         logits = model(images)
         loss = nll(logits * scale, labels, reduction='none')
-        logits_all.append(logits)
-        loss_all.append(loss)
+        logits_all.append(logits.detach().cpu())
+        loss_all.append(loss.detach().cpu())
     
     logits = torch.cat(logits_all,0)
     loss = torch.cat(loss_all,0)
@@ -285,8 +285,8 @@ def run_eiil(flags, transform):
                 for i, (images, labels) in enumerate(train_dataloader):
                     images, labels = images.to(flags.device), labels.to(flags.device)
                     logits = vgg(images)
-                    logits_env.append(logits)
-                    labels_env.append(labels)                                
+                    logits_env.append(logits.detach().cpu())
+                    labels_env.append(labels.detach().cpu())                                
                 
                 logits = torch.cat(logits_env,0)
                 labels = torch.cat(labels_env,0)
