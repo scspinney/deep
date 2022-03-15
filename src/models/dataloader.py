@@ -324,5 +324,5 @@ def simple_dataloader(image_paths,labels,batch_size,transform):
         num_workers=0,
         drop_last=True,
     )
-    return dataloader
+    return dataloader, weight
 
