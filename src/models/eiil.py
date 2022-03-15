@@ -9,6 +9,7 @@ from argparse import ArgumentParser
 from torch.optim.lr_scheduler import ReduceLROnPlateau, ExponentialLR, CosineAnnealingLR
 from torchmetrics.functional import accuracy
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
+import gc
 
 from dataloader import *
 
@@ -44,6 +45,7 @@ def pretrain_model(flags,envs,model,optimizer_pre,batch_size,transform):
             logits_env = []
             labels_env = []
             for i, (images, labels) in enumerate(train_dataloader):
+                print(f"Batch num: {i}")
                 images, labels = images.to(flags.device), labels.to(flags.device)
                 logits = model(images)
                 logits_env.append(logits)
@@ -53,6 +55,8 @@ def pretrain_model(flags,envs,model,optimizer_pre,batch_size,transform):
             env['nll'] = nll(logits, labels)
             env['acc'] = mean_accuracy(logits, labels)
             env['penalty'] = penalty(logits, labels, flags.device)
+            gc.collect()
+            torch.cuda.empty_cache()
 
         train_nll = torch.stack([envs[i]['nll'] for i in range(n_env-1)]).mean()
         train_acc = torch.stack([envs[i]['acc'] for i in range(n_env-1)]).mean()
@@ -249,6 +253,7 @@ def split_data_opt(envs, model, device, n_steps=10000, n_samples=-1, transform=N
 def run_eiil(flags, transform):
     final_train_accs = []
     final_test_accs = []
+    print("Beginning EIIL")
     for restart in range(flags.n_restarts):
         print("Restart", restart)
 
@@ -268,7 +273,8 @@ def run_eiil(flags, transform):
         if True: # flags,envs,model,optimizer_pre,batch_size,transform
             vgg_pre = pretrain_model(flags,envs,vgg_pre, optimizer_pre,flags.batch_size, transform)
             envs = split_data_opt(envs, vgg_pre, transform)
-        
+      
+        torch.cuda.empty_cache()
         vgg = VGG(flags).to(flags.device)
         optimizer = optim.Adam(vgg.parameters(), lr=flags.lr)
         for step in range(flags.steps):
