@@ -174,8 +174,8 @@ def main(test=False):
     # # parser = DL1Classifier.add_model_specific_args(parser)
     # args = parser.parse_args()
 
-    #data_dir = '/scratch/spinney/enigma_drug/data/'
-    data_dir = '/Users/sean/Projects/MRI_Deep_Learning/Kamran_Montreal_Data_Share/'
+    data_dir = '/scratch/spinney/enigma'
+    #data_dir = '/Users/sean/Projects/MRI_Deep_Learning/Kamran_Montreal_Data_Share/'
     label = "class"
     file_paths, labels = get_mri_data(data_dir,label)
     mask = ''

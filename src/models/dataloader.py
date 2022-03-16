@@ -11,29 +11,27 @@ from nilearn.image import index_img, smooth_img
 from nilearn.masking import apply_mask
 from nibabel.nifti1 import Nifti1Image
 import os
+import sys
 import torch
-from torch import Tensor, nn
 from torch.utils.data import DataLoader, Subset, Dataset, TensorDataset, random_split
 from torch.utils.data.sampler import WeightedRandomSampler, SubsetRandomSampler
-from torchvision import transforms
 import pytorch_lightning as pl
 import numpy as np
-import glob
 import pandas as pd
-import math
-from functools import partial
-from argparse import ArgumentParser
-from pytorch_lightning.loggers import WandbLogger
-import torch.nn as nn
-import torch.nn.functional as F
-from collections import OrderedDict
-import wandb
-import torchio as tio
 import json
 
+import monai
+from monai.data import ImageDataset
+from monai.transforms import AddChannel, Compose, RandRotate90, Resize, ResizeWithPadOrCrop, ScaleIntensity, EnsureType, RandGaussianNoise, RandAffine, Rotate
+
+import nibabel as nib
+from monai.data.image_reader import NibabelReader, has_nib
+from monai.data.utils import (correct_nifti_header_if_necessary, is_supported_format)
+from monai.transforms import LoadImage
+from monai.utils import ensure_tuple
+from nibabel.nifti1 import Nifti1Image
 from nilearn.image import crop_img, resample_to_img
 
-import warnings
 from typing import (
     Callable,
     ClassVar,
@@ -90,14 +88,23 @@ def class_imbalance_sampler(labels):
     samples_weight = torch.tensor([weight[t] for t in labels])
 
     # Create sampler, dataset, loader
-    sampler = WeightedRandomSampler(samples_weight, len(samples_weight),replacement=True)    
+    sampler = WeightedRandomSampler(samples_weight, len(samples_weight),replacement=True)
 
     return sampler, weight
 
 
 class MRIDataModuleIO(pl.LightningDataModule):
-    def __init__(self, data_dir: str, labels: List[int], format: str, batch_size: int, augment: List[str],
-                 mask: str = '', file_paths: List[str] = None, num_workers: int = 1, sampler: bool = True):
+    def __init__(self,
+                 data_dir: str,
+                 labels: List[int],
+                 format: str,
+                 batch_size: int,
+                 augment: List[str],
+                 mask: str = '',
+                 file_paths: List[str] = None,
+                 num_workers: int = 1,
+                 input_shape: Tuple = (96,96,96),
+                 sampler: bool = True):
         super().__init__()
         self.data_dir = data_dir
         self.labels = torch.tensor(labels)
@@ -110,6 +117,7 @@ class MRIDataModuleIO(pl.LightningDataModule):
         self.augment = augment
         self.file_paths = file_paths
         self.num_workers = num_workers
+        self.input_shape = input_shape
 
         shuffled_ind = np.random.choice(range(self.n), len(range(self.n)), replace=False)
 
@@ -129,51 +137,20 @@ class MRIDataModuleIO(pl.LightningDataModule):
         print(f"Class distribution in test set: {class_sample_count_test}")
         print(f"Class distribution in train set: {class_sample_count_train}")
 
-    def get_max_shape(self, subjects):
-
-        preprocess = tio.Compose([
-            tio.EnsureShapeMultiple(2)
-        ])
-
-        dataset = tio.SubjectsDataset(subjects, transform=preprocess)
-        shapes = np.array([s.spatial_shape for s in dataset])
-        self.max_shape = shapes.max(axis=0)
-        return self.max_shape
-
-    def prepare_data(self):
-        image_training_paths = self.train_paths
-        label_training = self.train_labels
-        image_test_paths = self.test_paths
-        label_test = self.test_labels
-
-        self.subjects = []
-        for image_path, label in zip(image_training_paths, label_training):
-            # 'image' and 'label' are arbitrary names for the images
-            subject = tio.Subject(
-                image=tio.ScalarImage(image_path),
-                label=label
-            )
-            self.subjects.append(subject)
-
-        self.test_subjects = []
-        for image_path, label in zip(image_test_paths, label_test):
-            subject = tio.Subject(image=tio.ScalarImage(image_path),
-                                  label=label)
-            self.test_subjects.append(subject)
-
-        # save train/test sets
-        with open(os.path.join(self.data_dir,"train_fnames.txt"), "w") as fp:
-            json.dump(list(image_training_paths), fp)
-
-        with open(os.path.join(self.data_dir,"test_fnames.txt"), "w") as fp:
-            json.dump(list(image_test_paths), fp)
+    # def get_max_shape(self, subjects):
+    #
+    #     dataset = tio.SubjectsDataset(subjects, transform=preprocess)
+    #     dataset = ImageDataset(image_files=images, labels=labels, transform=train_transforms)
+    #     shapes = np.array([s.spatial_shape for s in dataset])
+    #     self.max_shape = shapes.max(axis=0)
+    #     return self.max_shape
 
 
     def get_preprocessing_transform(self):
-        preprocess = tio.Compose([
-            tio.CropOrPad(self.get_max_shape(self.subjects + self.test_subjects)),
-            tio.EnsureShapeMultiple(2),
-            tio.RescaleIntensity((-1, 1)),
+        preprocess = Compose([ScaleIntensity(),
+                              AddChannel(),
+                              ResizeWithPadOrCrop(self.input_shape),
+                              EnsureType(),
         ])
         return preprocess
 
@@ -183,19 +160,23 @@ class MRIDataModuleIO(pl.LightningDataModule):
             augment = []
             for a in self.augment:
                 if a == 'affine':
-                    augment.append(tio.RandomAffine())
+                    augment.append(RandAffine(0.1))
                 elif a == 'noise':
-                    augment.append(tio.RandomNoise(p=0.3))
+                    augment.append(RandGaussianNoise(0.3))
 
-                elif a == 'motion':
-                    augment.append(tio.RandomMotion(p=0.2))
+                elif a == 'rotate':
+                    augment.append(Rotate(20))
 
-            augment = tio.Compose(augment)
+            augment = Compose(augment)
             return augment
         else:
             return None
 
     def setup(self, stage=None):
+        image_training_paths = self.train_paths
+        label_training = self.train_labels
+        image_test_paths = self.test_paths
+        label_test = self.test_labels
 
         indices = range(self.n_train)  # np.random.choice(range(self.n_train), range(self.n_train), replace=False)
         split = int(np.floor(.2 * self.n_train))
@@ -208,33 +189,45 @@ class MRIDataModuleIO(pl.LightningDataModule):
 
             self.train_sampler, self.weight = class_imbalance_sampler(self.train_labels[train_indices])
 
-        train_subjects = [self.subjects[i] for i in train_indices]
-        val_subjects = [self.subjects[i] for i in val_indices]
+
+        image_train_paths_subset = [image_training_paths[i] for i in train_indices]
+        label_train_paths_subset = [label_training[i] for i in train_indices]
+        image_val_paths_subset = [image_training_paths[i] for i in val_indices]
+        label_val_paths_subset = [label_training[i] for i in val_indices]
 
         self.preprocess = self.get_preprocessing_transform()
         augment = self.get_augmentation_transform()
         if augment is not None:
-            self.transform = tio.Compose([self.preprocess, augment])
+            self.transform = Compose([self.preprocess, augment])
         else:
             self.transform = self.preprocess
 
-        self.train_set = tio.SubjectsDataset(train_subjects, transform=self.transform)
-        self.val_set = tio.SubjectsDataset(val_subjects, transform=self.preprocess)
-        self.test_set = tio.SubjectsDataset(self.test_subjects, transform=self.preprocess)
+        self.train_set = ImageDataset(image_files=image_train_paths_subset, labels=label_train_paths_subset,
+                                transform=self.transform, reader="NibabelReader")
+        self.val_set = ImageDataset(image_files=image_val_paths_subset, labels=label_val_paths_subset,
+                                transform=self.preprocess, reader="NibabelReader")
+        self.test_set = ImageDataset(image_files=image_test_paths, labels=label_test,
+                                transform=self.preprocess, reader="NibabelReader")
+
+        # save train/test sets
+        with open(os.path.join(self.data_dir,"train_fnames.txt"), "w") as fp:
+            json.dump(list(image_training_paths), fp)
+
+        with open(os.path.join(self.data_dir,"test_fnames.txt"), "w") as fp:
+            json.dump(list(image_test_paths), fp)
 
     def train_dataloader(self):
-        return DataLoader(self.train_set, self.batch_size, sampler=self.train_sampler, num_workers=self.num_workers,
+        return DataLoader(self.train_set, self.batch_size, sampler=self.train_sampler, num_workers=0,#self.num_workers,
                           drop_last=True)
 
     def val_dataloader(self):
-        return DataLoader(self.val_set, self.batch_size, num_workers=self.num_workers, drop_last=True)
+        return DataLoader(self.val_set, self.batch_size, num_workers=0, drop_last=True)
 
     def test_dataloader(self):
-        return DataLoader(self.test_set, self.batch_size, num_workers=self.num_workers)
+        return DataLoader(self.test_set, self.batch_size, num_workers=0)
 
 
 def get_mri_data_beta(num_samples,num_classes, data_dir, cropped=False):
-
 
     name = f"data_split_c.csv"
     class_name = "dep" if num_classes == 2 else "class"
@@ -265,3 +258,71 @@ def get_mri_data_beta(num_samples,num_classes, data_dir, cropped=False):
     assert data.shape[0] == labels.shape[0]
 
     return data, labels
+
+def make_environment(flags):
+    # dep,drug,age,sex,filename,study,class
+    data_dir = flags.data_dir
+    input_shape = flags.input_shape
+    batch_size = flags.batch_size
+    name = f"data_split_c.csv"
+    class_name = "dep"    
+    df = pd.read_csv(os.path.join(data_dir, name))
+    K = df.shape[0]
+    shuffled_ind = np.random.choice(range(K), len(range(K)), replace=False)
+    image_train_paths = np.array(df["filename"].values[shuffled_ind])
+    label_train = np.array(df[class_name].values[shuffled_ind])
+    drug = np.array(df["drug"].values[shuffled_ind])
+    age = np.array(df["age"].values[shuffled_ind])
+    class_type = np.array(df["class"].values[shuffled_ind])
+    sex = np.array(df["sex"].values[shuffled_ind])
+    envs = [
+        {
+                'images': image_train_paths[:K//2-50],
+                'labels': label_train[:K//2-50],
+                'drug': drug[:K//2-50],
+                'age': age[:K//2-50],
+                'sex': sex[:K//2-50],
+                'class': class_type[:K//2-50]
+        },
+        {
+                'images': image_train_paths[K//2-50:-50],
+                'labels': label_train[K//2-50:-50],
+                'drug': drug[K//2-50:-50],
+                'age': age[K//2-50:-50],
+                'sex': sex[K//2-50:-50],
+                'class': class_type[K//2-50:-50]                
+        },
+        {
+                'images': image_train_paths[-100:],
+                'labels': label_train[-100:],
+                'drug': drug[-100:],
+                'age': age[-100:],
+                'sex': sex[-100:],
+                'class': class_type[-100:]                
+        }
+        ]
+            
+    return envs
+
+
+def simple_dataloader(image_paths,labels,batch_size,transform):
+    if isinstance(labels,np.ndarray):
+        labels = torch.tensor(labels)
+
+    train_sampler, weight = class_imbalance_sampler(labels)
+    train_set = ImageDataset(
+        image_files=image_paths, 
+        labels=labels,
+        transform=transform, 
+        reader="NibabelReader"
+        )
+    
+    dataloader = DataLoader(
+        train_set, 
+        batch_size, 
+        sampler=train_sampler, 
+        num_workers=0,
+        drop_last=True,
+    )
+    return dataloader, weight
+

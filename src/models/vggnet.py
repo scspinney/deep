@@ -1,6 +1,5 @@
-
-
 import sys
+
 sys.path.append('../')
 
 import os
@@ -10,7 +9,6 @@ from argparse import ArgumentParser
 from pytorch_lightning.loggers import WandbLogger
 import torch.nn as nn
 import wandb
-import torchio as tio
 from torch.optim.lr_scheduler import ReduceLROnPlateau, ExponentialLR, CosineAnnealingLR
 from torchmetrics.functional import accuracy
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
@@ -24,15 +22,16 @@ class VGG(pl.LightningModule):
 
         self.features = self.make_layers()
         self.avgpool = nn.AdaptiveAvgPool3d((7, 7, 7))
+        self.n_size = self._get_block_output(self.hparams.input_shape)
         self.classifier = self.make_classifier()
         # if init_weights:
         self.loss = nn.CrossEntropyLoss(self.hparams.weight)
         self._initialize_weights()
-        self.n_size = self._get_block_output(self.hparams.input_shape)
+
 
     def forward(self, x):
         x = self.features(x)
-        #x = self.avgpool(x)
+        # x = self.avgpool(x)
         x = torch.flatten(x, 1)
         x = self.classifier(x)
         return x
@@ -51,8 +50,8 @@ class VGG(pl.LightningModule):
                 nn.init.constant_(m.bias, 0)
 
     def training_step(self, batch, batch_idx):
-        x = batch['image'][tio.DATA]
-        y = batch['label']
+        x = batch[0]
+        y = batch[1]
         raw_out = self(x)
         loss = self.loss(raw_out, y)
         preds = torch.argmax(torch.softmax(raw_out, dim=1), dim=1)
@@ -67,8 +66,8 @@ class VGG(pl.LightningModule):
         return loss
 
     def evaluate(self, batch, stage=None):
-        x = batch['image'][tio.DATA]
-        y = batch['label']
+        x = batch[0]
+        y = batch[1]
         raw_out = self(x)
         loss = self.loss(raw_out, y)
         preds = torch.argmax(torch.softmax(raw_out, dim=1), dim=1)
@@ -78,34 +77,32 @@ class VGG(pl.LightningModule):
             self.log(f"{stage}_loss", loss, prog_bar=True, on_epoch=True)
             self.log(f"{stage}_acc", acc, prog_bar=True, on_epoch=True)
 
-        return {'y':y,'preds': preds}
+        return {'y': y, 'preds': preds}
 
     def validation_step(self, batch, batch_idx):
-        self.evaluate(batch, "val")
+        return self.evaluate(batch, "val")
 
     def test_step(self, batch, batch_idx):
-        self.evaluate(batch, "test")
+        return self.evaluate(batch, "test")
 
-   def validation_epoch_end(self, validation_step_outputs):
+    def validation_epoch_end(self, validation_step_outputs):
+        all_preds = torch.vstack([x['preds'] for x in validation_step_outputs]).flatten()
+        all_y = torch.vstack([x['y'] for x in validation_step_outputs]).flatten()
 
-       all_preds = torch.vstack([x['preds'] for x in validation_step_outputs])
-       all_y = torch.vstack([x['y'] for x in validation_step_outputs])
-
-       wandb.log({"conf_mat_val": wandb.plot.confusion_matrix(probs=None,
+        wandb.log({"conf_mat_val": wandb.plot.confusion_matrix(probs=None,
                                                                y_true=all_y.cpu().detach().numpy(),
                                                                preds=all_preds.cpu().detach().numpy(),
                                                                class_names=self.hparams.class_names)})
+
 
     def test_epoch_end(self, test_step_outputs):
-
-        all_preds = torch.vstack([x['preds'] for x in test_step_outputs])
-        all_y = torch.vstack([x['y'] for x in test_step_outputs])
+        all_preds = torch.vstack([x['preds'] for x in test_step_outputs]).flatten()
+        all_y = torch.vstack([x['y'] for x in test_step_outputs]).flatten()
 
         wandb.log({"conf_mat_test": wandb.plot.confusion_matrix(probs=None,
-                                                               y_true=all_y.cpu().detach().numpy(),
-                                                               preds=all_preds.cpu().detach().numpy(),
-                                                               class_names=self.hparams.class_names)})
-
+                                                                y_true=all_y.cpu().detach().numpy(),
+                                                                preds=all_preds.cpu().detach().numpy(),
+                                                                class_names=self.hparams.class_names)})
 
 
     def configure_optimizers(self):
@@ -123,10 +120,12 @@ class VGG(pl.LightningModule):
         return {
             "optimizer": optim,
             "lr_scheduler": {
-                "scheduler": CosineAnnealingLR(optim,T_max=10, eta_min=0), #ExponentialLR(optim, gamma=0.9), ReduceLROnPlateau(optim, ...),
+                "scheduler": CosineAnnealingLR(optim, T_max=10, eta_min=0),
+                # ExponentialLR(optim, gamma=0.9), ReduceLROnPlateau(optim, ...),
                 "monitor": "valid_loss",
             },
         }
+
 
     @staticmethod
     def add_model_specific_args(parent_parser):
@@ -136,6 +135,7 @@ class VGG(pl.LightningModule):
         parser.add_argument('--name', type=str, default='vggnet')
         parser.add_argument('--optim', type=str, default='adam')
         return parent_parser
+
 
     def make_layers(self):
         layers = []
@@ -153,68 +153,64 @@ class VGG(pl.LightningModule):
         return nn.Sequential(*layers)
 
 
-
     def make_classifier(self):
+        return nn.Sequential(  # nn.Linear(self.hparams.cfg[-2] * 7 * 7 * 7, self.hparams.classifier_cfg[0]),
+            nn.Linear(self.n_size, self.hparams.classifier_cfg[0]),
+            nn.ReLU(True),
+            nn.Dropout(),
+            nn.Linear(self.hparams.classifier_cfg[0], self.hparams.classifier_cfg[1]),
+            nn.ReLU(True),
+            nn.Dropout(),
+            nn.Linear(self.hparams.classifier_cfg[1], self.hparams.num_classes))
 
-        return nn.Sequential(#nn.Linear(self.hparams.cfg[-2] * 7 * 7 * 7, self.hparams.classifier_cfg[0]),
-                             nn.Linear(self.n_size, self.hparams.classifier_cfg[0]),
-                             nn.ReLU(True),
-                             nn.Dropout(),
-                             nn.Linear(self.hparams.classifier_cfg[0], self.hparams.classifier_cfg[1]),
-                             nn.ReLU(True),
-                             nn.Dropout(),
-                             nn.Linear(self.hparams.classifier_cfg[1], self.hparams.num_classes))
 
-    def _get_block_output(self,shape):
+    def _get_block_output(self, shape):
         self.eval()
-        batch_size=1
-        input = torch.autograd.Variable(torch.rand(batch_size,*shape))
-        input = torch.unsqueeze(input,0)
+        batch_size = 1
+        input = torch.autograd.Variable(torch.rand(batch_size, *shape))
+        input = torch.unsqueeze(input, 0)
         output_feat = self.features(input)
-        n_size = output_feat.data.view(batch_size,-1).size(1)
-        print(f"n_size: {n_size}")
+        n_size = output_feat.data.view(batch_size, -1).size(1)
+        print(f"Block output size: {n_size}")
         return n_size
-
 
 
 cfgs = {
     'A': [8, 'M', 16, 'M', 32, 32, 'M', 64, 64, 'M'],
-    'B': [8, 8,'M', 8,16, 'M', 16, 32, 32, 'M'],
-    'C': [8, 8, 'M', 16, 16,'M', 32, 32, 'M', 64, 64, 'M'],
-    #'A': [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
-    #'B': [64, 64, 'M', 128, 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
+    'B': [8, 8, 'M', 8, 16, 'M', 16, 32, 32, 'M'],
+    'C': [8, 8, 'M', 16, 16, 'M', 32, 32, 'M', 64, 64, 'M'],
+    # 'A': [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
+    # 'B': [64, 64, 'M', 128, 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
     'D': [16, 16, 'M', 32, 32, 'M', 64, 64, 'M', 128, 128, 'M', 128, 128, 'M'],
-    'E':[32, 32, 'M', 64, 64, 'M', 128, 128, 128, 'M', 256, 256, 256, 'M', 256, 256, 256, 'M']
+    'E': [32, 32, 'M', 64, 64, 'M', 128, 128, 128, 'M', 256, 256, 256, 'M', 256, 256, 256, 'M']
 }
 
-classifiers = {'A' : [128,64],
-               'B' : [256,256],
-               'C' : [4096,4096]}
-
-#####################################################################
-def main(test=False):
+classifiers = {'A': [128, 64],
+               'B': [256, 256],
+               'C': [4096, 4096]}
 
 
+def main():
     # ------------
     # args
     # ------------
     print("Parsing arguments...")
     parser = ArgumentParser()
-    parser.add_argument('--data_dir', type=str, default='/scratch/spinney/enigma_drug/data')
-    parser.add_argument('--batch_size', default=16, type=int)
-    #parser.add_argument('--max_epochs', default=15, type=int)
+    parser.add_argument('--data_dir', type=str, default='/Users/sean/Projects/deep/dataset')
+    parser.add_argument('--batch_size', default=8, type=int)
+    # parser.add_argument('--max_epochs', default=15, type=int)
     parser.add_argument('--num_classes', type=int, default=5)
-    parser.add_argument('--num_workers', type=int, default=6)
+    parser.add_argument('--num_workers', type=int, default=2)
     parser.add_argument('--num_samples', type=int, default=-1)
+    parser.add_argument('--input_shape', type=int, default=128)
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--format', type=str, default='nifti')
-    parser.add_argument('--test', type=bool, default=True)
+    parser.add_argument('--debug', type=bool, default=False)
     parser.add_argument('--cropped', type=bool, default=True)
     parser.add_argument('--batch_norm', type=bool, default=False)
     parser.add_argument('--augment', nargs='*')
     parser.add_argument('--cfg_name', type=str, default='A')
     parser.add_argument('--classifier_cfg', type=str, default='A')
-
 
     # trainer specific args
     parser = pl.Trainer.add_argparse_args(parser)
@@ -229,53 +225,59 @@ def main(test=False):
     print("Starting Wandb...")
     project_name = f"deep-{'multi_class' if args.num_classes > 2 else 'binary'}"
 
-    wandb.init(project=project_name, name=f"{args.name}-{args.cfg_name}",settings=wandb.Settings(start_method="fork"))
-
+    mode = "disabled" if args.debug else "dryrun"
+    wandb.init(mode=mode, project=project_name, name=f"{args.name}-{args.cfg_name}",
+               settings=wandb.Settings(start_method="fork"))
     wandb_logger = WandbLogger()
-
     mask = ''
 
-
     if args.num_samples == -1:
-        args.num_samples = -1*args.num_classes
+        args.num_samples = -1 * args.num_classes
 
+    if isinstance(args.input_shape,int):
+        args.input_shape = (args.input_shape,
+                            args.input_shape,
+                            args.input_shape)
 
     # these are returned shuffled
     file_paths, labels = get_mri_data_beta(args.num_samples, args.num_classes, args.data_dir, cropped=args.cropped)
 
-    dm = MRIDataModuleIO(args.data_dir, labels, args.format, args.batch_size, args.augment, mask, file_paths, args.num_workers)
-    dm.prepare_data()
+    dm = MRIDataModuleIO(args.data_dir, labels, args.format, args.batch_size, args.augment, mask, file_paths,
+                         args.num_workers, args.input_shape)
     dm.setup(stage='fit')
 
-    print(f"Input shape used: {dm.max_shape}")
+    print(f"Input shape used: {args.input_shape}")
     dict_args = vars(args)
     dict_args['weight'] = dm.weight
-    dict_args['input_shape'] = dm.max_shape
-    dict_args['class_names'] = ["control","ALC","ATS","COC","NIC"] if args.num_classes == 5 else ["control","dependent"]
+    dict_args['input_shape'] = args.input_shape
+    dict_args['class_names'] = ["control", "ALC", "ATS", "COC", "NIC"] if args.num_classes == 5 else ["control",
+                                                                                                      "dependent"]
     dict_args['cfg'] = cfgs[dict_args['cfg_name']]
     dict_args['classifier_cfg'] = classifiers[dict_args['classifier_cfg']]
-    
+
     model = VGG(**dict_args)
 
     slurm = os.environ.get("SLURM_JOB_NUM_NODES")
     num_nodes = int(slurm) if slurm else 1
 
-    default_root_dir = f"/scratch/spinney/enigma_drug/checkpoints/vggnet/"
+    default_root_dir = f"/Users/sean/Projects/deep/dataset/checkpoints/vggnet/"
     early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=0.00, patience=5, verbose=False, mode="max")
 
-    trainer = pl.Trainer(default_root_dir=default_root_dir,
-                         gpus=torch.cuda.device_count(),
-                         num_nodes=num_nodes,
-                         strategy='ddp' if num_nodes > 1 else 'dp',
-                         max_epochs=args.max_epochs,
-                         check_val_every_n_epoch=1,
-                         #log_every_n_steps=10,
-                         logger=wandb_logger,
-                         replace_sampler_ddp=False,
-                         early_stop_callback=True,
-                         callbacks=[early_stop_callback])
-                         # precision=16)
-
+    trainer = pl.Trainer(
+       # fast_dev_run=args.debug,
+        default_root_dir=default_root_dir,
+        gpus=torch.cuda.device_count(),
+        num_nodes=num_nodes,
+        strategy='ddp' if num_nodes > 1 else 'dp',
+        max_epochs=args.max_epochs,
+        check_val_every_n_epoch=1,
+        # log_every_n_steps=10,
+        logger=wandb_logger,
+        replace_sampler_ddp=False,
+        #early_stop_callback=True,
+        callbacks=[early_stop_callback],
+        profiler="simple"
+    )
 
     trainer.fit(model, dm)
 
@@ -287,5 +289,4 @@ def main(test=False):
 
 
 if __name__ == '__main__':
-    main(test=False)
-
+    main()

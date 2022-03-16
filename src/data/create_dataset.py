@@ -63,9 +63,11 @@ def create_dataset(main_path,demo_path):
             bfile = "_".join(bfile.split('_')[1:3])
 
 
-        if bfile[-2:] == '_c':
-            print(f"Renaming subject cropped: {bfile}")
-            bfile = bfile[:-2]
+        if bfile[-2:] == '_c' or bfile[-3:] == '_cr':
+            print("Skipping cropped version")
+            continue
+            #print(f"Renaming subject cropped: {bfile}")
+            #bfile = bfile[:-2]
 
 
         for i, sub in enumerate(subjects):
@@ -122,7 +124,7 @@ def create_dataset(main_path,demo_path):
 
 
 if __name__ == '__main__':
-# python create_dataset.py --main_path /Users/sean/Projects/MRI_Deep_Learning/Kamran_Montreal_Data_Share --demo_fname Mega-Analysis_demographic_data.xlsx
+# python create_dataset.py --main_path /Users/sean/Projects/deep/dataset --demo_fname Mega-Analysis_demographic_data.xlsx
 
 
     parser = ArgumentParser()
