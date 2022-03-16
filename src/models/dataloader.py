@@ -81,7 +81,7 @@ def class_imbalance_sampler(labels):
     class_sample_count = torch.tensor(
         [(labels == t).sum() for t in torch.unique(labels, sorted=True)])
 
-    print(f"Class_count: {class_sample_count}")
+    #print(f"Class_count: {class_sample_count}")
 
     weight = 1. / class_sample_count.float()
 

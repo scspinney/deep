@@ -3,13 +3,12 @@ import numpy as np
 import torch
 from torchvision import datasets
 from torch import nn, optim, autograd
-import pdb
 from tqdm import tqdm
 from argparse import ArgumentParser
 from torch.optim.lr_scheduler import ReduceLROnPlateau, ExponentialLR, CosineAnnealingLR
 from torchmetrics.functional import accuracy
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
-import gc
+import wandb
 
 from dataloader import *
 
@@ -23,14 +22,9 @@ def pretty_print(*values):
     print("   ".join(str_values))
 
 # Define loss function helpers
-def nll(logits, y, pos_weight, reduction='mean'):
-    #TODO: cross entropy not binary
+def nll(logits, y, pos_weight, reduction='mean'):    
     logits = torch.squeeze(logits)
     y = torch.squeeze(y).float()
-    #print(f"Logits shape: {logits.shape}")
-    #print(f"y shape: {y.shape}")
-    #print(f"pos_weight shape: {pos_weight.shape}")
-    #return nn.functional.binary_cross_entropy_with_logits(logits, y, pos_weight=pos_weight, reduction=reduction)
     return nn.functional.binary_cross_entropy_with_logits(logits, y, reduction=reduction)
 
 def mean_accuracy(logits, y):
@@ -92,6 +86,15 @@ def pretrain_model(flags,envs,model,optimizer_pre,batch_size,transform):
             train_penalty.detach().cpu().numpy(),
             test_acc.detach().cpu().numpy()
             )
+        
+        wandb.log({
+            "pre_vgg": 
+            {"train_nll": train_nll.detach().cpu().numpy(), 
+            "train_acc": train_acc.detach().cpu().numpy(),
+            "train_penalty": train_penalty.detach().cpu().numpy(),
+            "test_acc": test_acc.detach().cpu().numpy()}}, 
+            step=step)
+
     return model   
 
 
@@ -337,6 +340,13 @@ def run_eiil(flags, transform):
                     train_penalty.detach().cpu().numpy(),
                     test_acc.detach().cpu().numpy()
                 )
+            wandb.log({
+                "vgg": 
+                {"train_nll": train_nll.detach().cpu().numpy(), 
+                "train_acc": train_acc.detach().cpu().numpy(),
+                "train_penalty": train_penalty.detach().cpu().numpy(),
+                "test_acc": test_acc.detach().cpu().numpy()}}, 
+                step=step)
 
         final_train_accs.append(train_acc.detach().cpu().numpy())
         final_test_accs.append(test_acc.detach().cpu().numpy())
@@ -344,6 +354,14 @@ def run_eiil(flags, transform):
         print(np.mean(final_train_accs), np.std(final_train_accs))
         print('Final test acc (mean/std across restarts so far):')
         print(np.mean(final_test_accs), np.std(final_test_accs))
+
+        wandb.log({
+            "vgg": 
+            {"mean_final_train_acc": np.mean(final_train_accs), 
+            "std_final_train_acc": np.std(final_train_accs),
+            "mean_final_test_acc": np.mean(final_test_accs), 
+            "std_final_test_acc": np.std(final_test_accs)}}, 
+            step=step)
 
 
 cfgs = {
@@ -389,7 +407,7 @@ def main():
     parser.add_argument('--optim', type=str, default='adam')
 
     # EIIL params
-    parser.add_argument('--hidden_dim', type=int, default=256)
+    #parser.add_argument('--hidden_dim', type=int, default=256)
     parser.add_argument('--l2_regularizer_weight', type=float,default=0.001)
     parser.add_argument('--lr', type=float, default=0.001)
     parser.add_argument('--n_restarts', type=int, default=1)
@@ -402,13 +420,11 @@ def main():
     args = parser.parse_args()
 
     print("Starting Wandb...")
-    # project_name = f"deep-{'multi_class' if args.num_classes > 2 else 'binary'}"
+    project_name = f"deep-{'multi_class' if args.num_classes > 2 else 'binary'}"
 
-    # mode = "disabled" if args.debug else "dryrun"
-    # wandb.init(mode=mode, project=project_name, name=f"{args.name}-{args.cfg_name}",
-    #            settings=wandb.Settings(start_method="fork"))
-    # wandb_logger = WandbLogger()
-    # mask = ''
+    mode = "disabled" if args.debug else "dryrun"
+    wandb.init(mode=mode, project=project_name, name=f"{args.name}-{args.cfg_name}",
+               settings=wandb.Settings(start_method="fork"))    
 
     if args.num_samples == -1:
         args.num_samples = -1 * args.num_classes
