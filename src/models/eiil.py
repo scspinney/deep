@@ -25,7 +25,13 @@ def pretty_print(*values):
 # Define loss function helpers
 def nll(logits, y, pos_weight, reduction='mean'):
     #TODO: cross entropy not binary
-    return nn.functional.binary_cross_entropy_with_logits(logits, y, pos_weight=pos_weight, reduction=reduction)
+    logits = torch.squeeze(logits)
+    y = torch.squeeze(y).float()
+    #print(f"Logits shape: {logits.shape}")
+    #print(f"y shape: {y.shape}")
+    #print(f"pos_weight shape: {pos_weight.shape}")
+    #return nn.functional.binary_cross_entropy_with_logits(logits, y, pos_weight=pos_weight, reduction=reduction)
+    return nn.functional.binary_cross_entropy_with_logits(logits, y, reduction=reduction)
 
 def mean_accuracy(logits, y):
     preds = (logits > 0.).float()
@@ -33,6 +39,7 @@ def mean_accuracy(logits, y):
 
 def penalty(logits, y, pos_weight, device):
     scale = torch.tensor(1.).to(device).requires_grad_()
+    #loss = nll(logits * scale, y, pos_weight)
     loss = nll(logits * scale, y, pos_weight)
     grad = autograd.grad(loss, [scale], create_graph=True)[0]
     return torch.sum(grad**2)
@@ -45,18 +52,20 @@ def pretrain_model(flags,envs,model,optimizer_pre,batch_size,transform):
             logits_env = []
             labels_env = []
             for i, (images, labels) in enumerate(train_dataloader):
-                print(f"Batch num: {i}")
+                #print(f"Batch num: {i}")
                 images, labels = images.to(flags.device), labels.to(flags.device)
                 logits = model(images)
                 logits_env.append(logits.detach().cpu())
                 labels_env.append(labels.detach().cpu())
-            logits = torch.cat(logits_env,0)
-            labels = torch.cat(labels_env,0)
+                #break
+            #print("Now computing nll, acc and penalty")
+            logits = torch.cat(logits_env,0).to(flags.device).requires_grad_()
+            labels = torch.cat(labels_env,0).float().to(flags.device).requires_grad_()
             env['nll'] = nll(logits, labels, pos_weight)
             env['acc'] = mean_accuracy(logits, labels)
             env['penalty'] = penalty(logits, labels, pos_weight, flags.device)
-            gc.collect()
-            torch.cuda.empty_cache()
+            #gc.collect()
+            #torch.cuda.empty_cache()
 
         train_nll = torch.stack([envs[i]['nll'] for i in range(n_env-1)]).mean()
         train_acc = torch.stack([envs[i]['acc'] for i in range(n_env-1)]).mean()
@@ -357,7 +366,7 @@ def main():
     parser = ArgumentParser()
     #parser.add_argument('--data_dir', type=str, default='/Users/sean/Projects/deep/dataset')
     parser.add_argument('--data_dir', type=str, default='/scratch/spinney/enigma_drug/data')
-    parser.add_argument('--batch_size', default=8, type=int)
+    parser.add_argument('--batch_size', default=16, type=int)
     # parser.add_argument('--max_epochs', default=15, type=int)
     parser.add_argument('--num_classes', type=int, default=2)
     parser.add_argument('--num_workers', type=int, default=2)
@@ -386,7 +395,7 @@ def main():
     parser.add_argument('--n_restarts', type=int, default=1)
     parser.add_argument('--penalty_anneal_iters', type=int, default=100)
     parser.add_argument('--penalty_weight', type=float, default=10000.0)
-    parser.add_argument('--steps', type=int, default=5001)
+    parser.add_argument('--steps', type=int, default=500)
     parser.add_argument('--grayscale_model', action='store_true')
     parser.add_argument('--eiil', action='store_true')
 
