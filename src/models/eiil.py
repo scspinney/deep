@@ -51,15 +51,12 @@ def pretrain_model(flags,envs,model,optimizer_pre,batch_size,transform):
                 logits = model(images)
                 logits_env.append(logits.detach().cpu())
                 labels_env.append(labels.detach().cpu())
-                #break
-            #print("Now computing nll, acc and penalty")
+
             logits = torch.cat(logits_env,0).to(flags.device).requires_grad_()
             labels = torch.cat(labels_env,0).float().to(flags.device).requires_grad_()
             env['nll'] = nll(logits, labels, pos_weight)
             env['acc'] = mean_accuracy(logits, labels)
             env['penalty'] = penalty(logits, labels, pos_weight, flags.device)
-            #gc.collect()
-            #torch.cuda.empty_cache()
 
         train_nll = torch.stack([envs[i]['nll'] for i in range(n_env-1)]).mean()
         train_acc = torch.stack([envs[i]['acc'] for i in range(n_env-1)]).mean()
