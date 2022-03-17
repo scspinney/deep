@@ -42,6 +42,7 @@ def pretrain_model(flags,envs,model,optimizer_pre,batch_size,transform):
     n_env = len(envs)
     train_dataloader1, pos_weight1 = simple_dataloader(envs[0]['images'],envs[0]['labels'],batch_size//2,transform)
     train_dataloader2, pos_weight2 = simple_dataloader(envs[1]['images'],envs[1]['labels'],batch_size//2,transform)
+    test_dataloader, pos_weight = simple_dataloader(envs[-1]['images'],envs[-1]['labels'],batch_size,transform)
     for step in range(flags.steps):    
         
         for i, ((images1, labels1), (images2, labels2)) in enumerate(zip(train_dataloader1,train_dataloader2)):
@@ -74,8 +75,17 @@ def pretrain_model(flags,envs,model,optimizer_pre,batch_size,transform):
         loss.backward()
         optimizer_pre.step()
 
-        test_acc = envs[-1]['acc']
+        # Test
         if step % 10 == 0:
+            test_acc = []
+            for i, (images, labels) in enumerate(test_dataloader):
+                images, labels = images.to(flags.device), labels.to(flags.device)            
+                logits = model(images)
+                test_acc.append( mean_accuracy(logits, labels).detach().cpu())
+                
+            #test_acc = envs[-1]['acc']
+            test_acc = np.mean(test_acc)
+            
             pretty_print(
             np.int32(step),
             train_nll.detach().cpu().numpy(),
@@ -84,13 +94,13 @@ def pretrain_model(flags,envs,model,optimizer_pre,batch_size,transform):
             test_acc.detach().cpu().numpy()
             )
         
-        wandb.log({
-            "pre_vgg": 
-            {"train_nll": train_nll.detach().cpu().numpy(), 
-            "train_acc": train_acc.detach().cpu().numpy(),
-            "train_penalty": train_penalty.detach().cpu().numpy(),
-            "test_acc": test_acc.detach().cpu().numpy()}}, 
-            step=step)
+            wandb.log({
+                "pre_vgg": 
+                {"train_nll": train_nll.detach().cpu().numpy(), 
+                "train_acc": train_acc.detach().cpu().numpy(),
+                "train_penalty": train_penalty.detach().cpu().numpy(),
+                "test_acc": test_acc.detach().cpu().numpy()}}, 
+                step=step)
 
     return model   
 
