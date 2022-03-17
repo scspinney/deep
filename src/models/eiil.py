@@ -76,7 +76,8 @@ def pretrain_model(flags,envs,model,optimizer_pre,batch_size,transform):
         optimizer_pre.step()
 
         # Test
-        if step % 10 == 0:
+        if True:
+        #if step % 10 == 0:
             test_acc = []
             for i, (images, labels) in enumerate(test_dataloader):
                 images, labels = images.to(flags.device), labels.to(flags.device)            
@@ -91,7 +92,7 @@ def pretrain_model(flags,envs,model,optimizer_pre,batch_size,transform):
             train_nll.detach().cpu().numpy(),
             train_acc.detach().cpu().numpy(),
             train_penalty.detach().cpu().numpy(),
-            test_acc.detach().cpu().numpy()
+            test_acc
             )
         
             wandb.log({
@@ -99,7 +100,7 @@ def pretrain_model(flags,envs,model,optimizer_pre,batch_size,transform):
                 {"train_nll": train_nll.detach().cpu().numpy(), 
                 "train_acc": train_acc.detach().cpu().numpy(),
                 "train_penalty": train_penalty.detach().cpu().numpy(),
-                "test_acc": test_acc.detach().cpu().numpy()}}, 
+                "test_acc": test_acc}}, 
                 step=step)
 
     return model   
