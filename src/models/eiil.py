@@ -375,8 +375,8 @@ classifiers = {'A': [128, 64],
                'B': [256, 256],
                'C': [4096, 4096]}
 
-def main():
 
+if __name__ == '__main__':
     print("Parsing arguments...")
     parser = ArgumentParser()
     #parser.add_argument('--data_dir', type=str, default='/Users/sean/Projects/deep/dataset')
@@ -419,9 +419,9 @@ def main():
     print("Starting Wandb...")
     project_name = f"deep-{'multi_class' if args.num_classes > 2 else 'binary'}"
 
-    mode = "disabled" if args.debug else "dryrun"
-    wandb.init(mode=mode, project=project_name, name=f"{args.name}-{args.cfg_name}",
-               settings=wandb.Settings(start_method="fork"))    
+    mode = "disabled" if args.debug else "online"
+    wandb.init(mode=mode, entity="scspinney", project=project_name, name=f"{args.name}-{args.cfg_name}",
+               settings=wandb.Settings(start_method="fork"))
 
     if args.num_samples == -1:
         args.num_samples = -1 * args.num_classes
@@ -441,8 +441,5 @@ def main():
         ResizeWithPadOrCrop(input_shape),
         EnsureType(),
     ])
-    
-    run_eiil(args, preprocess)
 
-if __name__ == '__main__':
-    main()
+    run_eiil(args, preprocess)
