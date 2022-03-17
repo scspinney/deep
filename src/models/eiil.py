@@ -410,7 +410,7 @@ if __name__ == '__main__':
     parser.add_argument('--n_restarts', type=int, default=1)
     parser.add_argument('--penalty_anneal_iters', type=int, default=100)
     parser.add_argument('--penalty_weight', type=float, default=10000.0)
-    parser.add_argument('--steps', type=int, default=500)
+    parser.add_argument('--steps', type=int, default=50)
     parser.add_argument('--grayscale_model', action='store_true')
     parser.add_argument('--eiil', action='store_true')
 
