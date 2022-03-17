@@ -38,11 +38,11 @@ def penalty(logits, y, pos_weight, device):
     grad = autograd.grad(loss, [scale], create_graph=True)[0]
     return torch.sum(grad**2)
 
-def pretrain_model(flags,envs,model,optimizer_pre,batch_size,transform):
+def pretrain_model(flags,envs,model,optimizer_pre,transform):
     n_env = len(envs)
-    train_dataloader1, pos_weight1 = simple_dataloader(envs[0]['images'],envs[0]['labels'],batch_size//2,transform)
-    train_dataloader2, pos_weight2 = simple_dataloader(envs[1]['images'],envs[1]['labels'],batch_size//2,transform)
-    test_dataloader, pos_weight = simple_dataloader(envs[-1]['images'],envs[-1]['labels'],batch_size,transform)
+    train_dataloader1, pos_weight1 = simple_dataloader(envs[0]['images'],envs[0]['labels'],flags.batch_size//2,transform)
+    train_dataloader2, pos_weight2 = simple_dataloader(envs[1]['images'],envs[1]['labels'],flags.batch_size//2,transform)
+    test_dataloader, pos_weight = simple_dataloader(envs[-1]['images'],envs[-1]['labels'],flags.batch_size,transform)
     for step in range(flags.steps):    
         
         for i, ((images1, labels1), (images2, labels2)) in enumerate(zip(train_dataloader1,train_dataloader2)):
@@ -59,21 +59,21 @@ def pretrain_model(flags,envs,model,optimizer_pre,batch_size,transform):
             envs[1]['acc'] = mean_accuracy(logits2, labels2)
             envs[1]['penalty'] = penalty(logits2, labels2, pos_weight2, flags.device)
 
-        train_nll = torch.stack([envs[i]['nll'] for i in range(n_env-1)]).mean()
-        train_acc = torch.stack([envs[i]['acc'] for i in range(n_env-1)]).mean()
-        train_penalty = torch.stack([envs[i]['penalty'] for i in range(n_env-1)]).mean()
+            train_nll = torch.stack([envs[i]['nll'] for i in range(n_env-1)]).mean()
+            train_acc = torch.stack([envs[i]['acc'] for i in range(n_env-1)]).mean()
+            train_penalty = torch.stack([envs[i]['penalty'] for i in range(n_env-1)]).mean()
 
-        weight_norm = torch.tensor(0.).to(flags.device)
-        for w in model.parameters():
-            weight_norm += w.norm().pow(2)
+            weight_norm = torch.tensor(0.).to(flags.device)
+            for w in model.parameters():
+                weight_norm += w.norm().pow(2)
 
-        loss = train_nll.clone()
-        loss += flags.l2_regularizer_weight * weight_norm
-        # NOTE: IRM penalties not used in pre-training
+            loss = train_nll.clone()
+            loss += flags.l2_regularizer_weight * weight_norm
+            # NOTE: IRM penalties not used in pre-training
 
-        optimizer_pre.zero_grad()
-        loss.backward()
-        optimizer_pre.step()
+            optimizer_pre.zero_grad()
+            loss.backward()
+            optimizer_pre.step()
 
         # Test
         if step % 10 == 0:
@@ -294,66 +294,77 @@ def run_eiil(flags, transform):
 
         #if flags.eiil:
         if True: # flags,envs,model,optimizer_pre,batch_size,transform
-            vgg_pre = pretrain_model(flags,envs,vgg_pre, optimizer_pre,flags.batch_size, transform)
+            vgg_pre = pretrain_model(flags,envs,vgg_pre, optimizer_pre,transform)
             envs = split_data_opt(envs, vgg_pre, transform)
       
         torch.cuda.empty_cache()
         vgg = VGG(flags).to(flags.device)
         optimizer = optim.Adam(vgg.parameters(), lr=flags.lr)
-        for step in range(flags.steps):
-            for env in envs:
-                train_dataloader, pos_weight = simple_dataloader(env['images'],env['labels'],flags.batch_size,transform)
-                logits_env = []
-                labels_env = []
-                for i, (images, labels) in enumerate(train_dataloader):
-                    images, labels = images.to(flags.device), labels.to(flags.device)
+        train_dataloader1, pos_weight1 = simple_dataloader(envs[0]['images'],envs[0]['labels'],flags.batch_size//2,transform)
+        train_dataloader2, pos_weight2 = simple_dataloader(envs[1]['images'],envs[1]['labels'],flags.batch_size//2,transform)
+        test_dataloader, pos_weight = simple_dataloader(envs[-1]['images'],envs[-1]['labels'],flags.batch_size,transform)
+        for step in range(flags.steps):                
+            for i, ((images1, labels1), (images2, labels2)) in enumerate(zip(train_dataloader1,train_dataloader2)):
+                #print(f"Batch num: {i}")
+                images1, labels1 = images1.to(flags.device), labels1.to(flags.device)
+                images2, labels2 = images2.to(flags.device), labels2.to(flags.device)
+                logits1 = vgg(images1)
+                logits2 = vgg(images2)
+            
+                envs[0]['nll'] = nll(logits1, labels1, pos_weight1)
+                envs[0]['acc'] = mean_accuracy(logits1, labels1)
+                envs[0]['penalty'] = penalty(logits1, labels1, pos_weight1, flags.device)
+                envs[1]['nll'] = nll(logits2, labels2, pos_weight2)
+                envs[1]['acc'] = mean_accuracy(logits2, labels2)
+                envs[1]['penalty'] = penalty(logits2, labels2, pos_weight2, flags.device)
+
+                train_nll = torch.stack([envs[i]['nll'] for i in range(n_env-1)]).mean()
+                train_acc = torch.stack([envs[i]['acc'] for i in range(n_env-1)]).mean()
+                train_penalty = torch.stack([envs[i]['penalty'] for i in range(n_env-1)]).mean()
+
+
+                weight_norm = torch.tensor(0.).to(flags.device)
+                for w in vgg.parameters():
+                    weight_norm += w.norm().pow(2)
+
+                loss = train_nll.clone()
+                loss += flags.l2_regularizer_weight * weight_norm
+                penalty_weight = (flags.penalty_weight
+                    if step >= flags.penalty_anneal_iters else 1.0)
+                loss += penalty_weight * train_penalty
+                if penalty_weight > 1.0:
+                    # Rescale the entire loss to keep gradients in a reasonable range
+                    loss /= penalty_weight
+
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+            if step % 10 == 0:
+                test_acc = []
+                for i, (images, labels) in enumerate(test_dataloader):
+                    images, labels = images.to(flags.device), labels.to(flags.device)            
                     logits = vgg(images)
-                    logits_env.append(logits.detach().cpu())
-                    labels_env.append(labels.detach().cpu())                                
+                    test_acc.append( mean_accuracy(logits, labels).detach().cpu())
+                    
+                #test_acc = envs[-1]['acc']
+                test_acc = np.mean(test_acc)
                 
-                logits = torch.cat(logits_env,0)
-                labels = torch.cat(labels_env,0)
-                env['nll'] = nll(logits, labels, pos_weight)
-                env['acc'] = mean_accuracy(logits, labels)
-                env['penalty'] = penalty(logits, labels, pos_weight,flags.device)
-
-            train_nll = torch.stack([envs[0]['nll'], envs[1]['nll']]).mean()
-            train_acc = torch.stack([envs[0]['acc'], envs[1]['acc']]).mean()
-            train_penalty = torch.stack([envs[0]['penalty'], envs[1]['penalty']]).mean()
-
-            weight_norm = torch.tensor(0.).to(flags.device)
-            for w in vgg.parameters():
-                weight_norm += w.norm().pow(2)
-
-            loss = train_nll.clone()
-            loss += flags.l2_regularizer_weight * weight_norm
-            penalty_weight = (flags.penalty_weight
-                if step >= flags.penalty_anneal_iters else 1.0)
-            loss += penalty_weight * train_penalty
-            if penalty_weight > 1.0:
-                # Rescale the entire loss to keep gradients in a reasonable range
-                loss /= penalty_weight
-
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-            test_acc = envs[-1]['acc']
-            if step % 100 == 0:
                 pretty_print(
-                    np.int32(step),
-                    train_nll.detach().cpu().numpy(),
-                    train_acc.detach().cpu().numpy(),
-                    train_penalty.detach().cpu().numpy(),
-                    test_acc.detach().cpu().numpy()
+                np.int32(step),
+                train_nll.detach().cpu().numpy(),
+                train_acc.detach().cpu().numpy(),
+                train_penalty.detach().cpu().numpy(),
+                test_acc.detach().cpu().numpy()
                 )
-            wandb.log({
-                "vgg": 
-                {"train_nll": train_nll.detach().cpu().numpy(), 
-                "train_acc": train_acc.detach().cpu().numpy(),
-                "train_penalty": train_penalty.detach().cpu().numpy(),
-                "test_acc": test_acc.detach().cpu().numpy()}}, 
-                step=step)
+            
+                wandb.log({
+                    "vgg": 
+                    {"train_nll": train_nll.detach().cpu().numpy(), 
+                    "train_acc": train_acc.detach().cpu().numpy(),
+                    "train_penalty": train_penalty.detach().cpu().numpy(),
+                    "test_acc": test_acc.detach().cpu().numpy()}}, 
+                    step=step)
 
         final_train_accs.append(train_acc.detach().cpu().numpy())
         final_test_accs.append(test_acc.detach().cpu().numpy())
@@ -420,7 +431,8 @@ if __name__ == '__main__':
     parser.add_argument('--n_restarts', type=int, default=1)
     parser.add_argument('--penalty_anneal_iters', type=int, default=100)
     parser.add_argument('--penalty_weight', type=float, default=10000.0)
-    parser.add_argument('--steps', type=int, default=500)
+    parser.add_argument('--steps', type=int, default=50)
+    parser.add_argument('--pretrain_steps', type=int, default=1)
     parser.add_argument('--grayscale_model', action='store_true')
     parser.add_argument('--eiil', action='store_true')
 
