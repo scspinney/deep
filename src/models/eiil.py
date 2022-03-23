@@ -9,6 +9,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau, ExponentialLR, CosineAnn
 from torchmetrics.functional import accuracy
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 import wandb
+import time
 
 from dataloader import *
 
@@ -43,10 +44,10 @@ def pretrain_model(flags,envs,model,optimizer_pre,transform):
     train_dataloader1, pos_weight1 = simple_dataloader(envs[0]['images'],envs[0]['labels'],flags.batch_size//2,transform)
     train_dataloader2, pos_weight2 = simple_dataloader(envs[1]['images'],envs[1]['labels'],flags.batch_size//2,transform)
     test_dataloader, pos_weight = simple_dataloader(envs[-1]['images'],envs[-1]['labels'],flags.batch_size,transform)
-    for step in range(flags.steps):    
-        
+    for step in range(flags.pretrain_steps):    
+        print(f"Pretrain step: {step} of {flags.pretrain_steps}")
         for i, ((images1, labels1), (images2, labels2)) in enumerate(zip(train_dataloader1,train_dataloader2)):
-            #print(f"Batch num: {i}")
+            print(f"Batch num: {i}")
             images1, labels1 = images1.to(flags.device), labels1.to(flags.device)
             images2, labels2 = images2.to(flags.device), labels2.to(flags.device)
             logits1 = model(images1)
@@ -76,7 +77,7 @@ def pretrain_model(flags,envs,model,optimizer_pre,transform):
             optimizer_pre.step()
 
         # Test
-        if step % 10 == 0:
+        if step % 1 == 0:
             test_acc = []
             for i, (images, labels) in enumerate(test_dataloader):
                 images, labels = images.to(flags.device), labels.to(flags.device)            
@@ -213,7 +214,7 @@ class VGG(nn.Module):
         return n_size
 
 
-def split_data_opt(envs, model, device, n_steps=10000, n_samples=-1, transform=None, batch_size=8):
+def split_data_opt(envs, model, device, n_steps=100, n_samples=-1, transform=None, batch_size=8):
     """Learn soft environment assignment."""
     n_env = len(envs)    
     image_train_paths = torch.cat([envs[i]['images'][:n_samples] for i in range(n_env-1)],0)    
@@ -225,7 +226,9 @@ def split_data_opt(envs, model, device, n_steps=10000, n_samples=-1, transform=N
     
     logits_all = []
     loss_all = []
+    print(f"Getting logits from pretrained model...")
     for i, (images, labels) in enumerate(train_dataloader):
+        print(f"Batch: {i}")
         images, labels = images.to(device), labels.to(device)
         logits = model(images)
         loss = nll(logits * scale, labels, pos_weight,reduction='none')
@@ -237,10 +240,11 @@ def split_data_opt(envs, model, device, n_steps=10000, n_samples=-1, transform=N
     env_w = torch.randn(len(logits)).to(device).requires_grad_()
     optimizer = optim.Adam([env_w], lr=0.001)
 
-    print('learning soft environment assignments')
+    print(f"Starting soft environemnt inference...")
     penalties = []
     #TODO: make multinomial instead of binomial
     for i in tqdm(range(n_steps)):
+        print("Step: {i}")
         # penalty for env a
         lossa = (loss.squeeze() * env_w.sigmoid()).mean()
         grada = autograd.grad(lossa, [scale], create_graph=True)[0]
@@ -293,10 +297,13 @@ def run_eiil(flags, transform):
         pretty_print('step', 'train nll', 'train acc', 'train penalty', 'test acc')
 
         #if flags.eiil:
+        start = time.time()        
         if True: # flags,envs,model,optimizer_pre,batch_size,transform
             vgg_pre = pretrain_model(flags,envs,vgg_pre, optimizer_pre,transform)
             envs = split_data_opt(envs, vgg_pre, transform)
-      
+        end = time.time()
+        print(f"EIIL ended after {end - start} seconds.")
+        print(f"Starting EIIL IRM training.")
         torch.cuda.empty_cache()
         vgg = VGG(flags).to(flags.device)
         optimizer = optim.Adam(vgg.parameters(), lr=flags.lr)
@@ -305,7 +312,7 @@ def run_eiil(flags, transform):
         test_dataloader, pos_weight = simple_dataloader(envs[-1]['images'],envs[-1]['labels'],flags.batch_size,transform)
         for step in range(flags.steps):                
             for i, ((images1, labels1), (images2, labels2)) in enumerate(zip(train_dataloader1,train_dataloader2)):
-                #print(f"Batch num: {i}")
+                print(f"Batch num: {i}")
                 images1, labels1 = images1.to(flags.device), labels1.to(flags.device)
                 images2, labels2 = images2.to(flags.device), labels2.to(flags.device)
                 logits1 = vgg(images1)
@@ -400,8 +407,8 @@ classifiers = {'A': [128, 64],
 if __name__ == '__main__':
     print("Parsing arguments...")
     parser = ArgumentParser()
-    #parser.add_argument('--data_dir', type=str, default='/Users/sean/Projects/deep/dataset')
-    parser.add_argument('--data_dir', type=str, default='/scratch/spinney/enigma_drug/data')
+    parser.add_argument('--data_dir', type=str, default='/Users/sean/Projects/deep/dataset')
+    #parser.add_argument('--data_dir', type=str, default='/scratch/spinney/enigma_drug/data')
     parser.add_argument('--batch_size', default=16, type=int)
     # parser.add_argument('--max_epochs', default=15, type=int)
     parser.add_argument('--num_classes', type=int, default=2)
