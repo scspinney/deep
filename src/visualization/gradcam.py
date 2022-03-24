@@ -1,11 +1,36 @@
 from cv2 import cv2
+import os
 import torch
 import numpy as np
-import matplotlib.plt as plt
+import random
+import matplotlib.pyplot as plt
+import sys
+from argparse import ArgumentParser
+from skimage.io import imread, imshow
+from skimage.transform import resize
+import torchvision.transforms as transforms
+
+sys.path.insert(1, '/Users/sean/Projects/deep/src/models')
+
+from eiil import *
+from dataloader import *
+
+def get_activations(name):
+    def hook(model, input, output):
+        activation = output.detach()
+        return activation
+    return hook
 
 def gradcam(test_data_loader,model,device):
     fig, ax = plt.subplots(nrows = 40, ncols = 1, figsize = (300,300))
     counter_rows = 0
+
+    inv_normalize = transforms.Normalize(
+        mean=[-0.485/0.229, -0.456/0.224, -0.406/0.225],
+        std=[1/0.229, 1/0.224, 1/0.225]
+    )
+
+
     for i in range(0,40):
     
         # set the evaluation mode
@@ -14,6 +39,9 @@ def gradcam(test_data_loader,model,device):
         # get the image from the dataloader
         img, target = next(iter(test_data_loader))
         #print("Target:", target)
+
+        # register forward hook        
+        model.features.register_forward_hook(get_activations('features'))
 
         # get the most likely prediction of the model
         pred = model(img.to(device),0)
@@ -63,3 +91,63 @@ def gradcam(test_data_loader,model,device):
         #plt.imshow(inv_normalize(img[0]).permute(1,2,0))
 
         counter_rows = counter_rows + 1
+
+if __name__ == '__main__':
+
+    parser = ArgumentParser()
+    parser.add_argument('--data_dir', type=str, default='/Users/sean/Projects/deep/dataset')
+    parser.add_argument('--checkpointpath', type=str, default='~/somewhere')
+    #parser.add_argument('--data_dir', type=str, default='/scratch/spinney/enigma_drug/data')
+    parser.add_argument('--batch_size', default=16, type=int)
+    parser.add_argument('--num_classes', type=int, default=2)
+    parser.add_argument('--input_shape', type=int, default=128)
+    parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--format', type=str, default='nifti')
+    parser.add_argument('--debug', type=bool, default=False)
+    parser.add_argument('--cropped', type=bool, default=True)
+    parser.add_argument('--batch_norm', type=bool, default=False)
+    parser.add_argument('--augment', nargs='*')
+    parser.add_argument('--cfg_name', type=str, default='A')
+    parser.add_argument('--classifier_cfg', type=str, default='A')
+    parser.add_argument('--max_epochs', default=40, type=int)
+
+    args = parser.parse_args()
+
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+    random.seed(args.seed)
+    os.environ['PYTHONHASHSEED'] = str(args.seed)
+
+    checkpointpath = ""
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+    if isinstance(args.input_shape,int):
+        input_shape = args.input_shape
+        args.input_shape = (args.input_shape,
+                            args.input_shape,
+                            args.input_shape)
+
+    # load model 
+    model = VGG(args).to(device)
+    checkpoint = torch.load(checkpointpath, map_location="cpu")
+    model.load_state_dict(checkpoint["model_state_dict"])
+    
+
+    # the preprocessing when loading images
+
+    transform = Compose(
+    [
+        ScaleIntensity(),
+        AddChannel(),
+        ResizeWithPadOrCrop(input_shape),
+        EnsureType(),
+    ])
+
+    # load test data loader 
+    envs = make_environment(args)
+    test_dataloader, pos_weight = simple_dataloader(envs[-1]['images'],envs[-1]['labels'],args.batch_size,transform)
+    model.eval()
+
+    gradcam(test_dataloader,model,device)
+
+

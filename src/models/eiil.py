@@ -1,4 +1,3 @@
-import argparse
 import numpy as np
 import torch
 from torchvision import datasets
@@ -10,6 +9,7 @@ from torchmetrics.functional import accuracy
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 import wandb
 import time
+import random
 
 from dataloader import *
 
@@ -113,7 +113,8 @@ class VGG(nn.Module):
         self.features = self.make_layers()
         self.avgpool = nn.AdaptiveAvgPool3d((7, 7, 7))
         self.n_size = self._get_block_output(self.hparams.input_shape)
-
+        self.gradients = None
+        
         if self.hparams.num_classes == 2:
             self.hparams.num_classes = 1
 
@@ -128,6 +129,18 @@ class VGG(nn.Module):
         x = self.classifier(x)
         return x
 
+     # hook for the gradients of the activations
+    def activations_hook(self, grad):
+        self.gradients = grad
+
+    # method for the gradient extraction
+    def get_activations_gradient(self):
+        return self.gradients
+
+    def get_activations(self, x):
+        x = self.features(x)
+        return x
+
     def _initialize_weights(self):
         for m in self.modules():
             if isinstance(m, nn.Conv3d):
@@ -140,8 +153,6 @@ class VGG(nn.Module):
             elif isinstance(m, nn.Linear):
                 nn.init.normal_(m.weight, 0, 0.01)
                 nn.init.constant_(m.bias, 0)
-
-
 
     def configure_optimizers(self):
         # self.hparams available because we called self.save_hyperparameters()
@@ -405,6 +416,7 @@ classifiers = {'A': [128, 64],
 
 
 if __name__ == '__main__':
+    
     print("Parsing arguments...")
     parser = ArgumentParser()
     parser.add_argument('--data_dir', type=str, default='/Users/sean/Projects/deep/dataset')
@@ -444,6 +456,11 @@ if __name__ == '__main__':
     parser.add_argument('--eiil', action='store_true')
 
     args = parser.parse_args()
+
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+    random.seed(args.seed)
+    os.environ['PYTHONHASHSEED'] = str(args.seed)
 
     print("Starting Wandb...")
     project_name = f"deep-{'multi_class' if args.num_classes > 2 else 'binary'}"
