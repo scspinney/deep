@@ -214,11 +214,13 @@ class VGG(nn.Module):
         return n_size
 
 
-def split_data_opt(envs, model, device, n_steps=10000, n_samples=-1, transform=None, batch_size=8):
+def split_data_opt(envs, model, device, batch_size, n_steps=10000, n_samples=-1, transform=None):
     """Learn soft environment assignment."""
     n_env = len(envs)    
-    image_train_paths = torch.cat([envs[i]['images'][:n_samples] for i in range(n_env-1)],0)    
-    label_train = torch.cat([envs[i]['labels'][:n_samples] for i in range(n_env-1)],0)
+    #image_train_paths = torch.cat([envs[i]['images'][:n_samples] for i in range(n_env-1)],0)    
+    #label_train = torch.cat([envs[i]['labels'][:n_samples] for i in range(n_env-1)],0)
+    image_train_paths = np.concatenate([envs[i]['images'][:n_samples] for i in range(n_env-1)],0)
+    label_train = np.concatenate([envs[i]['labels'][:n_samples] for i in range(n_env-1)],0)
     print('size of pooled envs: '+str(len(image_train_paths)))
     
     train_dataloader, pos_weight = simple_dataloader(image_train_paths,label_train,batch_size,transform)
@@ -234,7 +236,7 @@ def split_data_opt(envs, model, device, n_steps=10000, n_samples=-1, transform=N
         loss_all.append(loss.detach().cpu())
     
     logits = torch.cat(logits_all,0)
-    loss = torch.cat(loss_all,0)
+    loss = torch.cat(loss_all,0).to(device).requires_grad_()
     env_w = torch.randn(len(logits)).to(device).requires_grad_()
     optimizer = optim.Adam([env_w], lr=0.001)
 
@@ -296,7 +298,7 @@ def run_eiil(flags, transform):
         #if flags.eiil:
         if True: # flags,envs,model,optimizer_pre,batch_size,transform
             vgg_pre = pretrain_model(flags,envs,vgg_pre, optimizer_pre,transform)
-            envs = split_data_opt(envs, vgg_pre, transform)
+            envs = split_data_opt(envs, vgg_pre, flags.device, flags.batch_size, 10, -1, transform)
       
         torch.cuda.empty_cache()
         vgg = VGG(flags).to(flags.device)
