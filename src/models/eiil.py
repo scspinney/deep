@@ -254,43 +254,40 @@ def split_data_opt(envs, model, device, batch_size, n_steps=100, n_samples=-1, t
     image_paths = []
     labels_all = []
     print(f"Getting logits from pretrained model...")
-    for i, obj in enumerate(train_dataloader):
-        print(f"Batch: {i}")        
-        images, labels = obj[0].to(device), obj[1].to(device)
-        logits = model(images)
-        loss = nll(logits * scale, labels, pos_weight,reduction='none')
-        # logits_all.append(logits.detach().cpu())
-        # loss_all.append(loss.detach().cpu())
-        logits_all.append(logits)
-        loss_all.append(loss)
-        image_paths += obj[-1]["filename_or_obj"]
-        labels_all += list(obj[1])
-        break
-    
-    logits = torch.cat(logits_all,0).to(device).requires_grad_()
-    loss = torch.cat(loss_all,0).to(device).requires_grad_()
-    env_w = torch.randn(len(logits)).to(device).requires_grad_()
+    env_w = torch.randn(len(label_train)).to(device).requires_grad_()
     optimizer = optim.Adam([env_w], lr=0.001)
-
+    optimizer.zero_grad()
     print(f"Starting soft environemnt inference...")
-    penalties = []
-    #TODO: make multinomial instead of binomial
     for i in tqdm(range(n_steps)):
         print(f"Step: {i}")
-        # penalty for env a
-        lossa = (loss.squeeze() * env_w.sigmoid()).mean()
-        grada = autograd.grad(lossa, [scale], create_graph=True)[0]
-        penaltya = torch.sum(grada**2)
-        # penalty for env b
-        lossb = (loss.squeeze() * (1-env_w.sigmoid())).mean()
-        gradb = autograd.grad(lossb, [scale], create_graph=True)[0]
-        penaltyb = torch.sum(gradb**2)
-        # negate
-        npenalty = - torch.stack([penaltya, penaltyb]).mean()
-
-        optimizer.zero_grad()
-        npenalty.backward(retain_graph=True)
+        for i, obj in enumerate(train_dataloader):
+            print(f"Batch: {i}")        
+            images, labels = obj[0].to(device), obj[1].to(device)
+            logits = model(images)
+            loss = nll(logits * scale, labels, pos_weight,reduction='none')
+            # logits_all.append(logits.detach().cpu())
+            # loss_all.append(loss.detach().cpu())
+            logits_all.append(logits)
+            loss_all.append(loss)
+            image_paths += obj[-1]["filename_or_obj"]
+            labels_all += list(obj[1])
+            #logits = torch.cat(logits_all,0).to(device).requires_grad_()
+            #loss = torch.cat(loss_all,0).to(device).requires_grad_()
+            
+            # penalty for env a
+            lossa = (loss.squeeze() * env_w.sigmoid()).mean()
+            grada = autograd.grad(lossa, [scale], create_graph=True)[0]
+            penaltya = torch.sum(grada**2)
+            # penalty for env b
+            lossb = (loss.squeeze() * (1-env_w.sigmoid())).mean()
+            gradb = autograd.grad(lossb, [scale], create_graph=True)[0]
+            penaltyb = torch.sum(gradb**2)
+            # negate
+            npenalty = - torch.stack([penaltya, penaltyb]).mean()
+            npenalty.backward(retain_graph=True)
+            
         optimizer.step()
+        optimizer.zero_grad()
 
     # split envs based on env_w threshold
     new_envs = []
@@ -312,13 +309,13 @@ def split_data_opt(envs, model, device, batch_size, n_steps=100, n_samples=-1, t
 def run_eiil(flags, transform):
     final_train_accs = []
     final_test_accs = []
-    print("Beginning EIIL")
+    print("Beginning EIIL")    
     for restart in range(flags.n_restarts):
         print("Restart", restart)
 
         # Build environments: two groups with binary labelled data randomly assigned
         envs = make_environment(flags)
-        
+        n_env = len(envs)
         # Instantiate the model
         vgg_pre = VGG(flags).to(flags.device)
         #vgg = VGG(flags).to(flags.device)
@@ -450,7 +447,7 @@ if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('--data_dir', type=str, default='/Users/sean/Projects/deep/dataset')
     #parser.add_argument('--data_dir', type=str, default='/scratch/spinney/enigma_drug/data')
-    parser.add_argument('--batch_size', default=4, type=int)
+    parser.add_argument('--batch_size', default=16, type=int)
     # parser.add_argument('--max_epochs', default=15, type=int)
     parser.add_argument('--num_classes', type=int, default=2)
     parser.add_argument('--num_workers', type=int, default=2)
