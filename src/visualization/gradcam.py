@@ -10,7 +10,8 @@ from skimage.io import imread, imshow
 from skimage.transform import resize
 import torchvision.transforms as transforms
 
-sys.path.insert(1, '/Users/sean/Projects/deep/src/models')
+#sys.path.insert(1, '/Users/sean/Projects/deep/src/models')
+sys.path.insert(1, '../models')
 
 from eiil import *
 from dataloader import *
@@ -21,7 +22,7 @@ def get_activations(name):
         return activation
     return hook
 
-def gradcam(test_data_loader,model,device):
+def gradcam(test_data_loader,model,device,N=5):
     fig, ax = plt.subplots(nrows = 40, ncols = 1, figsize = (300,300))
     counter_rows = 0
 
@@ -31,7 +32,7 @@ def gradcam(test_data_loader,model,device):
     )
 
 
-    for i in range(0,40):
+    for i in range(N):
     
         # set the evaluation mode
         model.eval()
@@ -129,8 +130,9 @@ if __name__ == '__main__':
 
     # load model 
     model = VGG(args).to(device)
-    checkpoint = torch.load(checkpointpath, map_location="cpu")
-    model.load_state_dict(checkpoint["model_state_dict"])
+    if checkpointpath:
+        checkpoint = torch.load(checkpointpath, map_location="cpu")
+        model.load_state_dict(checkpoint["model_state_dict"])
     
 
     # the preprocessing when loading images

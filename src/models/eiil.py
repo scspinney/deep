@@ -47,6 +47,8 @@ def pretrain_model(flags,envs,model,optimizer_pre,transform):
     for step in range(flags.pretrain_steps):    
         print(f"Pretrain step: {step} of {flags.pretrain_steps}")
         for i, ((images1, labels1), (images2, labels2)) in enumerate(zip(train_dataloader1,train_dataloader2)):
+            print(images1)
+            print(labels1)
             print(f"Batch num: {i}")
             images1, labels1 = images1.to(flags.device), labels1.to(flags.device)
             images2, labels2 = images2.to(flags.device), labels2.to(flags.device)
@@ -72,10 +74,11 @@ def pretrain_model(flags,envs,model,optimizer_pre,transform):
             loss += flags.l2_regularizer_weight * weight_norm
             # NOTE: IRM penalties not used in pre-training
 
-            optimizer_pre.zero_grad()
-            loss.backward()
-            optimizer_pre.step()
+            loss.backward()            
+            break
 
+        optimizer_pre.step()
+        optimizer_pre.zero_grad()
         # Test
         if True:
         #if step % 10 == 0:
@@ -225,8 +228,7 @@ class VGG(nn.Module):
         print(f"Block output size: {n_size}")
         return n_size
 
-
-def split_data_opt(envs, model, device, n_steps=100, n_samples=-1, transform=None, batch_size=8):
+def split_data_opt(envs, model, device, batch_size, n_steps=100, n_samples=-1, transform=None):
     """Learn soft environment assignment."""
     n_env = len(envs)    
     #image_train_paths = torch.cat([envs[i]['images'][:n_samples] for i in range(n_env-1)],0)    
@@ -240,16 +242,21 @@ def split_data_opt(envs, model, device, n_steps=100, n_samples=-1, transform=Non
     
     logits_all = []
     loss_all = []
+    images_all = []
+    labels_all = p[]
     print(f"Getting logits from pretrained model...")
     for i, (images, labels) in enumerate(train_dataloader):
         print(f"Batch: {i}")
         images, labels = images.to(device), labels.to(device)
         logits = model(images)
         loss = nll(logits * scale, labels, pos_weight,reduction='none')
-        logits_all.append(logits.detach().cpu())
-        loss_all.append(loss.detach().cpu())
+        # logits_all.append(logits.detach().cpu())
+        # loss_all.append(loss.detach().cpu())
+        logits_all.append(logits)
+        loss_all.append(loss)
+        break
     
-    logits = torch.cat(logits_all,0)
+    logits = torch.cat(logits_all,0).to(device).requires_grad_()
     loss = torch.cat(loss_all,0).to(device).requires_grad_()
     env_w = torch.randn(len(logits)).to(device).requires_grad_()
     optimizer = optim.Adam([env_w], lr=0.001)
@@ -258,7 +265,7 @@ def split_data_opt(envs, model, device, n_steps=100, n_samples=-1, transform=Non
     penalties = []
     #TODO: make multinomial instead of binomial
     for i in tqdm(range(n_steps)):
-        print("Step: {i}")
+        print(f"Step: {i}")
         # penalty for env a
         lossa = (loss.squeeze() * env_w.sigmoid()).mean()
         grada = autograd.grad(lossa, [scale], create_graph=True)[0]
@@ -357,11 +364,10 @@ def run_eiil(flags, transform):
                 if penalty_weight > 1.0:
                     # Rescale the entire loss to keep gradients in a reasonable range
                     loss /= penalty_weight
-
-                optimizer.zero_grad()
                 loss.backward()
-                optimizer.step()
 
+            optimizer.step()    
+            optimizer.zero_grad()
             if step % 10 == 0:
                 test_acc = []
                 for i, (images, labels) in enumerate(test_dataloader):
@@ -423,8 +429,8 @@ if __name__ == '__main__':
     
     print("Parsing arguments...")
     parser = ArgumentParser()
-    parser.add_argument('--data_dir', type=str, default='/Users/sean/Projects/deep/dataset')
-    #parser.add_argument('--data_dir', type=str, default='/scratch/spinney/enigma_drug/data')
+    #parser.add_argument('--data_dir', type=str, default='/Users/sean/Projects/deep/dataset')
+    parser.add_argument('--data_dir', type=str, default='/scratch/spinney/enigma_drug/data')
     parser.add_argument('--batch_size', default=16, type=int)
     # parser.add_argument('--max_epochs', default=15, type=int)
     parser.add_argument('--num_classes', type=int, default=2)

@@ -313,6 +313,7 @@ def simple_dataloader(image_paths,labels,batch_size,transform):
     train_set = ImageDataset(
         image_files=image_paths, 
         labels=labels,
+        image_only=False,
         transform=transform, 
         reader="NibabelReader"
         )
