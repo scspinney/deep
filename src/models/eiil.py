@@ -263,11 +263,9 @@ def split_data_opt(envs, model, device, batch_size, n_steps=100, n_samples=-1, t
         logits = model(images)
         loss = nll(logits * scale, labels, pos_weight,reduction='none')
         #logits_all.append(logits.detach())
-        loss_all.append(loss.detach())
+        loss_all.append(loss)
         image_paths = obj[-1]["filename_or_obj"]
         labels_all = list(obj[1])
-        if i == 5:
-            break
     
     #logits = torch.cat(logits_all,0).to(device)
     loss = torch.cat(loss_all,0).to(device)
@@ -452,9 +450,9 @@ if __name__ == '__main__':
     
     print("Parsing arguments...")
     parser = ArgumentParser()
-    parser.add_argument('--data_dir', type=str, default='/Users/sean/Projects/deep/dataset')
-    #parser.add_argument('--data_dir', type=str, default='/scratch/spinney/enigma_drug/data')
-    parser.add_argument('--batch_size', default=16, type=int)
+    #parser.add_argument('--data_dir', type=str, default='/Users/sean/Projects/deep/dataset')
+    parser.add_argument('--data_dir', type=str, default='/scratch/spinney/enigma_drug/data')
+    parser.add_argument('--batch_size', default=32, type=int)
     # parser.add_argument('--max_epochs', default=15, type=int)
     parser.add_argument('--num_classes', type=int, default=2)
     parser.add_argument('--num_workers', type=int, default=2)
