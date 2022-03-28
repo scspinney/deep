@@ -75,7 +75,8 @@ def gradcam(test_data_loader,model,device):
         temp_heat = cv2.resize(np.float32(heatmap), (224, 224))
         temp_heat = np.uint8(255 * temp_heat)
         temp_heat = cv2.applyColorMap(temp_heat, cv2.COLORMAP_JET)
-        superimposed_img = temp_heat * 0.001 + inv_normalize(img[0].cpu()).permute(1,2,0).numpy() * 1.5
+        #superimposed_img = temp_heat * 0.001 + inv_normalize(img[0].cpu()).permute(1,2,0).numpy() * 1.5
+        superimposed_img = temp_heat * 0.001 + img[0].cpu().permute(1,2,0).numpy() * 1.5
         superimposed_img = np.clip(superimposed_img, 0, 1)
         ax[counter_rows].imshow(superimposed_img)#.astype(np.uint8))
         ax[counter_rows].set_title("Actual:%i | Predicted:%i" %(np.int(target), np.int(np.round(pred[0].cpu().detach()))), fontsize=20)

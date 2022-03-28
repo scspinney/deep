@@ -114,7 +114,7 @@ class VGG(nn.Module):
         self.avgpool = nn.AdaptiveAvgPool3d((7, 7, 7))
         self.n_size = self._get_block_output(self.hparams.input_shape)
         self.gradients = None
-        
+
         if self.hparams.num_classes == 2:
             self.hparams.num_classes = 1
 
@@ -122,9 +122,12 @@ class VGG(nn.Module):
         # if init_weights:        
         self._initialize_weights()
 
-    def forward(self, x):
+    def forward(self, x, flag=1):
         x = self.features(x)
         # x = self.avgpool(x)
+        if flag == 1:
+            # register the hook
+            h = x.register_hook(self.activations_hook)
         x = torch.flatten(x, 1)
         x = self.classifier(x)
         return x
