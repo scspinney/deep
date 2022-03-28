@@ -46,10 +46,14 @@ def pretrain_model(flags,envs,model,optimizer_pre,transform):
     test_dataloader, pos_weight = simple_dataloader(envs[-1]['images'],envs[-1]['labels'],flags.batch_size,transform)
     for step in range(flags.pretrain_steps):    
         print(f"Pretrain step: {step} of {flags.pretrain_steps}")
-        for i, ((images1, labels1), (images2, labels2)) in enumerate(zip(train_dataloader1,train_dataloader2)):
-            print(images1)
-            print(labels1)
+        for i, (obj1, obj2) in enumerate(zip(train_dataloader1,train_dataloader2)):
             print(f"Batch num: {i}")
+            images1 = obj1[0]
+            labels1 = obj1[1]
+            metadata1 = obj1[2]
+            images2 = obj2[0]
+            labels2 = obj2[1]
+            metadata2 = obj2[2]
             images1, labels1 = images1.to(flags.device), labels1.to(flags.device)
             images2, labels2 = images2.to(flags.device), labels2.to(flags.device)
             logits1 = model(images1)
@@ -83,7 +87,9 @@ def pretrain_model(flags,envs,model,optimizer_pre,transform):
         if True:
         #if step % 10 == 0:
             test_acc = []
-            for i, (images, labels) in enumerate(test_dataloader):
+            for i, obj in enumerate(test_dataloader):
+                images = obj[0]
+                labels = obj[1]
                 images, labels = images.to(flags.device), labels.to(flags.device)            
                 logits = model(images)
                 test_acc.append( mean_accuracy(logits, labels).detach().cpu())
@@ -245,18 +251,20 @@ def split_data_opt(envs, model, device, batch_size, n_steps=100, n_samples=-1, t
     
     logits_all = []
     loss_all = []
-    images_all = []
-    labels_all = p[]
+    image_paths = []
+    labels_all = []
     print(f"Getting logits from pretrained model...")
-    for i, (images, labels) in enumerate(train_dataloader):
-        print(f"Batch: {i}")
-        images, labels = images.to(device), labels.to(device)
+    for i, obj in enumerate(train_dataloader):
+        print(f"Batch: {i}")        
+        images, labels = obj[0].to(device), obj[1].to(device)
         logits = model(images)
         loss = nll(logits * scale, labels, pos_weight,reduction='none')
         # logits_all.append(logits.detach().cpu())
         # loss_all.append(loss.detach().cpu())
         logits_all.append(logits)
         loss_all.append(loss)
+        image_paths += obj[-1]["filename_or_obj"]
+        labels_all += list(obj[1])
         break
     
     logits = torch.cat(logits_all,0).to(device).requires_grad_()
@@ -336,8 +344,14 @@ def run_eiil(flags, transform):
         train_dataloader2, pos_weight2 = simple_dataloader(envs[1]['images'],envs[1]['labels'],flags.batch_size//2,transform)
         test_dataloader, pos_weight = simple_dataloader(envs[-1]['images'],envs[-1]['labels'],flags.batch_size,transform)
         for step in range(flags.steps):                
-            for i, ((images1, labels1), (images2, labels2)) in enumerate(zip(train_dataloader1,train_dataloader2)):
+            for i, (obj1, obj2) in enumerate(zip(train_dataloader1,train_dataloader2)):
                 print(f"Batch num: {i}")
+                images1 = obj1[0]
+                labels1 = obj1[1]
+                metadata1 = obj1[2]
+                images2 = obj2[0]
+                labels2 = obj2[1]
+                metadata2 = obj2[2]            
                 images1, labels1 = images1.to(flags.device), labels1.to(flags.device)
                 images2, labels2 = images2.to(flags.device), labels2.to(flags.device)
                 logits1 = vgg(images1)
@@ -373,7 +387,9 @@ def run_eiil(flags, transform):
             optimizer.zero_grad()
             if step % 10 == 0:
                 test_acc = []
-                for i, (images, labels) in enumerate(test_dataloader):
+                for i, obj in enumerate(test_dataloader):
+                    images = obj[0]
+                    labels = obj[1]
                     images, labels = images.to(flags.device), labels.to(flags.device)            
                     logits = vgg(images)
                     test_acc.append( mean_accuracy(logits, labels).detach().cpu())
@@ -432,9 +448,9 @@ if __name__ == '__main__':
     
     print("Parsing arguments...")
     parser = ArgumentParser()
-    #parser.add_argument('--data_dir', type=str, default='/Users/sean/Projects/deep/dataset')
-    parser.add_argument('--data_dir', type=str, default='/scratch/spinney/enigma_drug/data')
-    parser.add_argument('--batch_size', default=16, type=int)
+    parser.add_argument('--data_dir', type=str, default='/Users/sean/Projects/deep/dataset')
+    #parser.add_argument('--data_dir', type=str, default='/scratch/spinney/enigma_drug/data')
+    parser.add_argument('--batch_size', default=4, type=int)
     # parser.add_argument('--max_epochs', default=15, type=int)
     parser.add_argument('--num_classes', type=int, default=2)
     parser.add_argument('--num_workers', type=int, default=2)
