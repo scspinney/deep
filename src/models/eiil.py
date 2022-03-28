@@ -257,19 +257,23 @@ def split_data_opt(envs, model, device, batch_size, n_steps=100, n_samples=-1, t
     new_envs = [[],[]]
     images_envs = [[],[]]
     labels_envs = [[],[]]
+    image_paths = []
+    labels_all = []
     for i, obj in enumerate(train_dataloader):
         print(f"Batch: {i}")        
         images, labels = obj[0].to(device), obj[1].to(device)
         logits = model(images)
-        loss = nll(logits * scale, labels, pos_weight,reduction='none')
-        #logits_all.append(logits.detach())
-        loss_all.append(loss.detach())
-        image_paths = obj[-1]["filename_or_obj"]
-        labels_all = list(obj[1])
+        #loss = nll(logits * scale, labels, pos_weight,reduction='none')
+        logits_all.append(logits.detach())
+        #loss_all.append(loss)
+        image_paths += obj[-1]["filename_or_obj"]
+        labels_all += list(obj[1])
         if i == 5:
             break
     
-    #logits = torch.cat(logits_all,0).to(device)
+    logits = torch.cat(logits_all,0).to(device)
+    labels = torch.tensor(labels_all).to(device)
+    loss = nll(logits * scale, labels, pos_weight,reduction='none')
     loss = torch.cat(loss_all,0).to(device)
     env_w = torch.randn(len(loss)).to(device).requires_grad_()
     optimizer = optim.Adam([env_w], lr=0.001)    
