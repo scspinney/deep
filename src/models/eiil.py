@@ -253,7 +253,6 @@ def split_data_opt(envs, model, device, batch_size, n_steps=100, n_samples=-1, t
     loss_all = []
 
     print(f"Getting logits from pretrained model...")    
-    print(f"Starting soft environemnt inference...")
     # split envs based on env_w threshold
     new_envs = [[],[]]
     images_envs = [[],[]]
@@ -263,39 +262,42 @@ def split_data_opt(envs, model, device, batch_size, n_steps=100, n_samples=-1, t
         images, labels = obj[0].to(device), obj[1].to(device)
         logits = model(images)
         loss = nll(logits * scale, labels, pos_weight,reduction='none')
-        env_w = torch.randn(len(logits)).to(device).requires_grad_()
-        optimizer = optim.Adam([env_w], lr=0.001)    
+        #logits_all.append(logits.detach())
+        loss_all.append(loss.detach())
         image_paths = obj[-1]["filename_or_obj"]
         labels_all = list(obj[1])
-        for i in tqdm(range(n_steps)):
-            print(f"Step: {i}")            
-            # logits_all.append(logits.detach().cpu())
-            # loss_all.append(loss.detach().cpu())
-
-            #logits = torch.cat(logits_all,0).to(device).requires_grad_()
-            #loss = torch.cat(loss_all,0).to(device).requires_grad_()
+        if i == 5:
+            break
+    
+    #logits = torch.cat(logits_all,0).to(device)
+    loss = torch.cat(loss_all,0).to(device)
+    env_w = torch.randn(len(loss)).to(device).requires_grad_()
+    optimizer = optim.Adam([env_w], lr=0.001)    
+    print(f"Starting soft environemnt inference...")        
+    for i in tqdm(range(n_steps)):
+        print(f"Step: {i}")            
+        
+        # penalty for env a
+        lossa = (loss.squeeze() * env_w.sigmoid()).mean()
+        grada = autograd.grad(lossa, [scale], create_graph=True)[0]
+        penaltya = torch.sum(grada**2)
+        # penalty for env b
+        lossb = (loss.squeeze() * (1-env_w.sigmoid())).mean()
+        gradb = autograd.grad(lossb, [scale], create_graph=True)[0]
+        penaltyb = torch.sum(gradb**2)
+        # negate
+        npenalty = - torch.stack([penaltya, penaltyb]).mean()
+        optimizer.zero_grad()
+        npenalty.backward(retain_graph=True)
+        optimizer.step()
             
-            # penalty for env a
-            lossa = (loss.squeeze() * env_w.sigmoid()).mean()
-            grada = autograd.grad(lossa, [scale], create_graph=True)[0]
-            penaltya = torch.sum(grada**2)
-            # penalty for env b
-            lossb = (loss.squeeze() * (1-env_w.sigmoid())).mean()
-            gradb = autograd.grad(lossb, [scale], create_graph=True)[0]
-            penaltyb = torch.sum(gradb**2)
-            # negate
-            npenalty = - torch.stack([penaltya, penaltyb]).mean()
-            optimizer.zero_grad()
-            npenalty.backward(retain_graph=True)
-            optimizer.step()
-            
-        idx0 = (env_w.sigmoid()>.5)
-        idx1 = (env_w.sigmoid()<=.5)
-        # train envs
-        images_envs[0] += list(compress(image_paths,list(idx0.numpy()))) #image_paths[idx0]
-        labels_envs[0] += list(compress(labels_all,list(idx0.numpy())))  #labels_all[idx0]
-        images_envs[1] += list(compress(image_paths,list(idx1.numpy()))) #image_paths[idx1]
-        labels_envs[1] += list(compress(labels_all,list(idx1.numpy()))) #labels_all[idx1]
+    idx0 = (env_w.sigmoid()>.5)
+    idx1 = (env_w.sigmoid()<=.5)
+    # train envs
+    images_envs[0] += list(compress(image_paths,list(idx0.numpy()))) #image_paths[idx0]
+    labels_envs[0] += list(compress(labels_all,list(idx0.numpy())))  #labels_all[idx0]
+    images_envs[1] += list(compress(image_paths,list(idx1.numpy()))) #image_paths[idx1]
+    labels_envs[1] += list(compress(labels_all,list(idx1.numpy()))) #labels_all[idx1]
 
     # for idx in (idx0, idx1):
     #     new_envs.append(dict(images=images_envs[idx], labels=labels[idx]))
