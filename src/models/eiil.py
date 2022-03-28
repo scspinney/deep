@@ -10,7 +10,7 @@ from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 import wandb
 import time
 import random
-
+from itertools import compress
 from dataloader import *
 
 def pretty_print(*values):
@@ -251,26 +251,27 @@ def split_data_opt(envs, model, device, batch_size, n_steps=100, n_samples=-1, t
     
     logits_all = []
     loss_all = []
-    image_paths = []
-    labels_all = []
-    print(f"Getting logits from pretrained model...")
-    env_w = torch.randn(len(label_train)).to(device).requires_grad_()
-    optimizer = optim.Adam([env_w], lr=0.001)
-    optimizer.zero_grad()
+
+    print(f"Getting logits from pretrained model...")    
     print(f"Starting soft environemnt inference...")
-    for i in tqdm(range(n_steps)):
-        print(f"Step: {i}")
-        for i, obj in enumerate(train_dataloader):
-            print(f"Batch: {i}")        
-            images, labels = obj[0].to(device), obj[1].to(device)
-            logits = model(images)
-            loss = nll(logits * scale, labels, pos_weight,reduction='none')
+    # split envs based on env_w threshold
+    new_envs = [[],[]]
+    images_envs = [[],[]]
+    labels_envs = [[],[]]
+    for i, obj in enumerate(train_dataloader):
+        print(f"Batch: {i}")        
+        images, labels = obj[0].to(device), obj[1].to(device)
+        logits = model(images)
+        loss = nll(logits * scale, labels, pos_weight,reduction='none')
+        env_w = torch.randn(len(logits)).to(device).requires_grad_()
+        optimizer = optim.Adam([env_w], lr=0.001)    
+        image_paths = obj[-1]["filename_or_obj"]
+        labels_all = list(obj[1])
+        for i in tqdm(range(n_steps)):
+            print(f"Step: {i}")            
             # logits_all.append(logits.detach().cpu())
             # loss_all.append(loss.detach().cpu())
-            logits_all.append(logits)
-            loss_all.append(loss)
-            image_paths += obj[-1]["filename_or_obj"]
-            labels_all += list(obj[1])
+
             #logits = torch.cat(logits_all,0).to(device).requires_grad_()
             #loss = torch.cat(loss_all,0).to(device).requires_grad_()
             
@@ -284,18 +285,22 @@ def split_data_opt(envs, model, device, batch_size, n_steps=100, n_samples=-1, t
             penaltyb = torch.sum(gradb**2)
             # negate
             npenalty = - torch.stack([penaltya, penaltyb]).mean()
+            optimizer.zero_grad()
             npenalty.backward(retain_graph=True)
+            optimizer.step()
             
-        optimizer.step()
-        optimizer.zero_grad()
+        idx0 = (env_w.sigmoid()>.5)
+        idx1 = (env_w.sigmoid()<=.5)
+        # train envs
+        images_envs[0] += list(compress(image_paths,list(idx0.numpy()))) #image_paths[idx0]
+        labels_envs[0] += list(compress(labels_all,list(idx0.numpy())))  #labels_all[idx0]
+        images_envs[1] += list(compress(image_paths,list(idx1.numpy()))) #image_paths[idx1]
+        labels_envs[1] += list(compress(labels_all,list(idx1.numpy()))) #labels_all[idx1]
 
-    # split envs based on env_w threshold
-    new_envs = []
-    idx0 = (env_w.sigmoid()>.5)
-    idx1 = (env_w.sigmoid()<=.5)
-    # train envs
-    for idx in (idx0, idx1):
-        new_envs.append(dict(images=images[idx], labels=labels[idx]))
+    # for idx in (idx0, idx1):
+    #     new_envs.append(dict(images=images_envs[idx], labels=labels[idx]))
+    new_envs[0] = dict(images=images_envs[0], labels=labels_envs[0])
+    new_envs[1] = dict(images=images_envs[1], labels=labels_envs[1])
     # test env
     new_envs.append(dict(images=envs[-1]['images'],
                         labels=envs[-1]['labels']))
