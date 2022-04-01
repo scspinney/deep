@@ -330,7 +330,6 @@ def simple_dataloader(image_paths,labels,batch_size,transform):
     )
     return dataloader, weight
 
-<<<<<<< HEAD
 
 
 =======
@@ -356,19 +355,10 @@ def inspect_env_dist(init_envs,new_envs):
         print(Counter(drug))
         print(Counter(age))
         print(Counter(sex))
->>>>>>> 7e7d3e0619662956d545d0506a2bb66cedfeb37b
 
 if __name__ == '__main__':
     # test dataloader and view images 
     
-<<<<<<< HEAD
-    data_dir='/Users/sean/Projects/deep/dataset'        
-    batch_size=4
-    num_classes=2
-    input_shape=128
-    format='nifti'
-    cropped=True
-=======
     print("Parsing arguments...")
     parser = ArgumentParser()
     parser.add_argument('--data_dir', type=str, default='/Users/sean/Projects/deep/dataset')
