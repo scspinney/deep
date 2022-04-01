@@ -409,52 +409,36 @@ if __name__ == '__main__':
     parser.add_argument('--eiil', action='store_true')
 
     args = parser.parse_args()
->>>>>>> 7e7d3e0619662956d545d0506a2bb66cedfeb37b
-    
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     if isinstance(args.input_shape,int):
         input_shape = args.input_shape
-<<<<<<< HEAD
         args.input_shape = (args.input_shape,
                             args.input_shape,
                             args.input_shape)
 
     # the preprocessing when loading images
-=======
-        input_shape = ( input_shape,
-                        input_shape,
-                        input_shape)
-
-    # the preprocessing when loading images
     def threshold_at_one(x):
         # threshold at 1
         return x > 0
->>>>>>> 7e7d3e0619662956d545d0506a2bb66cedfeb37b
 
     transform = Compose(
     [
         ScaleIntensity(),
         AddChannel(),
-<<<<<<< HEAD
-        ResizeWithPadOrCrop(input_shape),
-=======
         CropForeground(select_fn=threshold_at_one, margin=0),
         Resize(input_shape),
         #ResizeWithPadOrCrop(input_shape),
->>>>>>> 7e7d3e0619662956d545d0506a2bb66cedfeb37b
         EnsureType(),
     ])
 
     # load test data loader 
     envs = make_environment(args)
     test_dataloader, pos_weight = simple_dataloader(envs[-1]['images'],envs[-1]['labels'],args.batch_size,transform)
-<<<<<<< HEAD
 
     for i in range(10):
         img,label = next(iter(test_data_loader))
         print(label)
-=======
     
     fig, ax = plt.subplots(5,figsize = (20,20))
     fig.tight_layout()        
@@ -475,4 +459,3 @@ if __name__ == '__main__':
     plt.show()
         
         
->>>>>>> 7e7d3e0619662956d545d0506a2bb66cedfeb37b
