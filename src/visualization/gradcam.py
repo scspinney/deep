@@ -9,9 +9,10 @@ from argparse import ArgumentParser
 from skimage.io import imread, imshow
 from skimage.transform import resize
 import torchvision.transforms as transforms
+from nipy.labs.viz import plot_map, mni_sform, coord_transform
 
-#sys.path.insert(1, '/Users/sean/Projects/deep/src/models')
-sys.path.insert(1, '../models')
+sys.path.insert(1, '/Users/sean/Projects/deep/src/models')
+#sys.path.insert(1, '../models')
 
 from eiil import *
 from dataloader import *
@@ -31,21 +32,20 @@ def gradcam(test_data_loader,model,device,N=5):
         std=[1/0.229, 1/0.224, 1/0.225]
     )
 
-
     for i in range(N):
-    
-        # set the evaluation mode
-        model.eval()
-
+        model.train()
         # get the image from the dataloader
-        img, target = next(iter(test_data_loader))
+        obj = next(iter(test_data_loader))
+        image = obj[0]
+        label = obj[1]
         #print("Target:", target)
-
+        image.requires_grad=True
+        
         # register forward hook        
         model.features.register_forward_hook(get_activations('features'))
 
         # get the most likely prediction of the model
-        pred = model(img.to(device),0)
+        pred = model(image.to(device),1)
 
         # get the gradient of the output with respect to the parameters of the model
         pred.backward()
@@ -54,51 +54,47 @@ def gradcam(test_data_loader,model,device,N=5):
         gradients = model.get_activations_gradient()
 
         # pool the gradients across the channels
-        pooled_gradients = torch.mean(gradients, dim=[0, 2, 3])
+        pooled_gradients = torch.mean(gradients, dim=[0, 2, 3, 4])
 
         # get the activations of the last convolutional layer
-        activations = model.get_activations(img.to(device)).detach()
+        activations = model.get_activations(image.to(device)).detach()
 
         # weight the channels by corresponding gradients
-        for i in range(32):
-            activations[:, i, :, :] *= pooled_gradients[i]
+        for i in range(64):
+            activations[:, i, :, :, :] *= pooled_gradients[i]
             
         # average the channels of the activations
         heatmap = torch.mean(activations, dim=1).squeeze()
 
         # relu on top of the heatmap
         # expression (2) in https://arxiv.org/pdf/1610.02391.pdf
-        heatmap = np.maximum(heatmap.cpu(), 0)
+        #heatmap = np.maximum(heatmap.cpu(), 0)
         
         # normalize the heatmap
         heatmap /= torch.max(heatmap)
-
-        temp_heat = cv2.resize(np.float32(heatmap), (224, 224))
-        temp_heat = np.uint8(255 * temp_heat)
-        temp_heat = cv2.applyColorMap(temp_heat, cv2.COLORMAP_JET)
-        #superimposed_img = temp_heat * 0.001 + inv_normalize(img[0].cpu()).permute(1,2,0).numpy() * 1.5
-        superimposed_img = temp_heat * 0.001 + img[0].cpu().permute(1,2,0).numpy() * 1.5
-        superimposed_img = np.clip(superimposed_img, 0, 1)
-        ax[counter_rows].imshow(superimposed_img)#.astype(np.uint8))
-        ax[counter_rows].set_title("Actual:%i | Predicted:%i" %(np.int(target), np.int(np.round(pred[0].cpu().detach()))), fontsize=20)
-        #ax[counter_rows,0].matshow(heatmap.squeeze())
-        #ax[counter_rows,1].imshow(inv_normalize(img[0]).permute(1,2,0))
-        #ax[counter_rows,0].set_title("Predicted value:%i" %np.int(np.round(pred[0].cpu().detach())),fontsize=300)
-        #ax[counter_rows,1].set_title("Actual value:%i" %np.int(target),fontsize=300)
-        
-        # draw the heatmap
-        #plt.matshow(heatmap.squeeze())
-
-        # plot original image
-        #plt.imshow(inv_normalize(img[0]).permute(1,2,0))
-
-        counter_rows = counter_rows + 1
+        fig, ax = plt.subplots(nrows = 4, ncols = 3, figsize = (20,10))
+        fig.tight_layout()        
+        heatmap = torch.mean(heatmap,0)
+        heatmap_2d = heatmap           
+        for i in range(4):
+            slice_2d = image[0,:,:,:,np.random.randint(40,70)].detach().cpu()             
+            temp_heat = cv2.resize(np.float32(heatmap_2d), (128, 128))
+            temp_heat = np.uint8(255 * temp_heat)
+            temp_heat = cv2.applyColorMap(temp_heat, cv2.COLORMAP_JET)
+            #superimposed_img = temp_heat * 0.001 + inv_normalize(img[0].cpu()).permute(1,2,0).numpy() * 1.5
+            superimposed_img = temp_heat* 0.001 + slice_2d.permute(1,2,0).numpy() * 1.5
+            superimposed_img = np.clip(superimposed_img, 0, 1)
+            ax[i,0].imshow(superimposed_img)#.astype(np.uint8))
+            ax[i,1].set_title("Actual:%i | Predicted:%i" %(np.int(label), np.int(np.round(pred[0].cpu().detach()))), fontsize=12)
+            ax[i,1].matshow(heatmap_2d.squeeze())
+            ax[i,2].imshow(slice_2d.permute(1,2,0))           
+        plt.show()
 
 if __name__ == '__main__':
 
     parser = ArgumentParser()
     parser.add_argument('--data_dir', type=str, default='/Users/sean/Projects/deep/dataset')
-    parser.add_argument('--checkpointpath', type=str, default='~/somewhere')
+    parser.add_argument('--checkpointpath', type=str, default='/Users/sean/Projects/deep/models')
     #parser.add_argument('--data_dir', type=str, default='/scratch/spinney/enigma_drug/data')
     parser.add_argument('--batch_size', default=16, type=int)
     parser.add_argument('--num_classes', type=int, default=2)
@@ -120,7 +116,6 @@ if __name__ == '__main__':
     random.seed(args.seed)
     os.environ['PYTHONHASHSEED'] = str(args.seed)
 
-    checkpointpath = ""
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     if isinstance(args.input_shape,int):
@@ -131,13 +126,12 @@ if __name__ == '__main__':
 
     # load model 
     model = VGG(args).to(device)
-    if checkpointpath:
-        checkpoint = torch.load(checkpointpath, map_location="cpu")
-        model.load_state_dict(checkpoint["model_state_dict"])
+    if args.checkpointpath:
+        model_path = os.path.join(args.checkpointpath,'vgg.pt')
+        checkpoint = torch.load(model_path, map_location="cpu")
+        model.load_state_dict(checkpoint["model_state_dict"])        
     
-
     # the preprocessing when loading images
-
     transform = Compose(
     [
         ScaleIntensity(),
@@ -148,7 +142,7 @@ if __name__ == '__main__':
 
     # load test data loader 
     envs = make_environment(args)
-    test_dataloader, pos_weight = simple_dataloader(envs[-1]['images'],envs[-1]['labels'],args.batch_size,transform)
+    test_dataloader, pos_weight = simple_dataloader(envs[-1]['images'],envs[-1]['labels'],1,transform)
     model.eval()
 
     gradcam(test_dataloader,model,device)

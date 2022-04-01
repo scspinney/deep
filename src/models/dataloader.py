@@ -8,9 +8,11 @@ Original file is located at
 """
 
 from nilearn.image import index_img, smooth_img
+from nilearn.plotting import plot_stat_map, plot_anat, plot_img
 from nilearn.masking import apply_mask
 from nibabel.nifti1 import Nifti1Image
 import os
+import random
 import sys
 import torch
 from torch.utils.data import DataLoader, Subset, Dataset, TensorDataset, random_split
@@ -19,11 +21,11 @@ import pytorch_lightning as pl
 import numpy as np
 import pandas as pd
 import json
-
+from collections import Counter
 import monai
 from monai.data import ImageDataset
-from monai.transforms import AddChannel, Compose, RandRotate90, Resize, ResizeWithPadOrCrop, ScaleIntensity, EnsureType, RandGaussianNoise, RandAffine, Rotate
-
+from monai.transforms import AddChannel, Compose, RandRotate90, Resize, Spacing, ResizeWithPadOrCrop, ScaleIntensity, EnsureType, RandGaussianNoise, RandAffine, Rotate, CropForeground
+from argparse import ArgumentParser
 import nibabel as nib
 from monai.data.image_reader import NibabelReader, has_nib
 from monai.data.utils import (correct_nifti_header_if_necessary, is_supported_format)
@@ -31,6 +33,7 @@ from monai.transforms import LoadImage
 from monai.utils import ensure_tuple
 from nibabel.nifti1 import Nifti1Image
 from nilearn.image import crop_img, resample_to_img
+import matplotlib.pyplot as plt
 
 from typing import (
     Callable,
@@ -327,41 +330,149 @@ def simple_dataloader(image_paths,labels,batch_size,transform):
     )
     return dataloader, weight
 
+<<<<<<< HEAD
 
 
+=======
+def inspect_env_dist(init_envs,new_envs):
+
+    # combine informations from both init_envs
+    init_image_paths = np.concatenate([init_envs[0]['images'],init_envs[1]['images']],0).tolist()
+    init_drug = np.concatenate([init_envs[0]['drug'],init_envs[1]['drug']],0)
+    init_age = np.concatenate([init_envs[0]['age'],init_envs[1]['age']],0)
+    init_sex = np.concatenate([init_envs[0]['sex'],init_envs[1]['sex']],0)
+
+    # remove duplicates in new_envs
+
+    # use init as a lookup to filter in new envs
+    for e in range(len(new_envs)):
+        print(f"env {e}")
+        image_paths = set(new_envs[e]['images'])
+        both = image_paths.intersection(init_image_paths)
+        indices = [init_image_paths.index(x) for x in both]
+        drug = init_drug[indices]
+        age = init_age[indices]
+        sex = init_sex[indices]
+        print(Counter(drug))
+        print(Counter(age))
+        print(Counter(sex))
+>>>>>>> 7e7d3e0619662956d545d0506a2bb66cedfeb37b
 
 if __name__ == '__main__':
     # test dataloader and view images 
     
+<<<<<<< HEAD
     data_dir='/Users/sean/Projects/deep/dataset'        
     batch_size=4
     num_classes=2
     input_shape=128
     format='nifti'
     cropped=True
+=======
+    print("Parsing arguments...")
+    parser = ArgumentParser()
+    parser.add_argument('--data_dir', type=str, default='/Users/sean/Projects/deep/dataset')
+    parser.add_argument('--savedir', type=str, default='/Users/sean/Projects/deep/models')
+    #parser.add_argument('--data_dir', type=str, default='/scratch/spinney/enigma_drug/data')
+    parser.add_argument('--batch_size', default=1, type=int)
+    # parser.add_argument('--max_epochs', default=15, type=int)
+    parser.add_argument('--num_classes', type=int, default=2)
+    parser.add_argument('--num_workers', type=int, default=2)
+    parser.add_argument('--num_samples', type=int, default=-1)
+    parser.add_argument('--input_shape', type=int, default=128)
+    parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--format', type=str, default='nifti')
+    parser.add_argument('--debug', type=bool, default=False)
+    parser.add_argument('--cropped', type=bool, default=True)
+    parser.add_argument('--batch_norm', type=bool, default=False)
+    parser.add_argument('--augment', nargs='*')
+    parser.add_argument('--cfg_name', type=str, default='A')
+    parser.add_argument('--classifier_cfg', type=str, default='A')
+    parser.add_argument('--max_epochs', default=40, type=int)
+
+    # model params
+    parser.add_argument('--learning_rate', type=float, default=0.001)
+    parser.add_argument('--dropout', type=float, default=0.5)
+    parser.add_argument('--name', type=str, default='vggnet')
+    parser.add_argument('--optim', type=str, default='adam')
+
+    # EIIL params
+    #parser.add_argument('--hidden_dim', type=int, default=256)
+    parser.add_argument('--l2_regularizer_weight', type=float,default=0.001)
+    parser.add_argument('--lr', type=float, default=0.001)
+    parser.add_argument('--n_restarts', type=int, default=1)
+    parser.add_argument('--penalty_anneal_iters', type=int, default=100)
+    parser.add_argument('--penalty_weight', type=float, default=10000.0)
+    parser.add_argument('--steps', type=int, default=50)
+    parser.add_argument('--pretrain_steps', type=int, default=1)
+    parser.add_argument('--grayscale_model', action='store_true')
+    parser.add_argument('--eiil', action='store_true')
+
+    args = parser.parse_args()
+>>>>>>> 7e7d3e0619662956d545d0506a2bb66cedfeb37b
     
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     if isinstance(args.input_shape,int):
         input_shape = args.input_shape
+<<<<<<< HEAD
         args.input_shape = (args.input_shape,
                             args.input_shape,
                             args.input_shape)
 
     # the preprocessing when loading images
+=======
+        input_shape = ( input_shape,
+                        input_shape,
+                        input_shape)
+
+    # the preprocessing when loading images
+    def threshold_at_one(x):
+        # threshold at 1
+        return x > 0
+>>>>>>> 7e7d3e0619662956d545d0506a2bb66cedfeb37b
 
     transform = Compose(
     [
         ScaleIntensity(),
         AddChannel(),
+<<<<<<< HEAD
         ResizeWithPadOrCrop(input_shape),
+=======
+        CropForeground(select_fn=threshold_at_one, margin=0),
+        Resize(input_shape),
+        #ResizeWithPadOrCrop(input_shape),
+>>>>>>> 7e7d3e0619662956d545d0506a2bb66cedfeb37b
         EnsureType(),
     ])
 
     # load test data loader 
     envs = make_environment(args)
     test_dataloader, pos_weight = simple_dataloader(envs[-1]['images'],envs[-1]['labels'],args.batch_size,transform)
+<<<<<<< HEAD
 
     for i in range(10):
         img,label = next(iter(test_data_loader))
         print(label)
+=======
+    
+    fig, ax = plt.subplots(5,figsize = (20,20))
+    fig.tight_layout()        
+    batch = next(iter(test_dataloader))
+    img,label = batch[0],batch[1]
+    img = img.squeeze()         
+    row = 0
+    col= 0
+    for i in range(5):            
+        r = random.randint(60,100)       
+        k = random.randint(0,2)
+        if k ==0:
+            ax[i].imshow(img[80+i,:,:])
+        elif k ==1:
+            ax[i].imshow(img[:,80+i,:])
+        else:
+            ax[i].imshow(img[:,:,80+i])
+    plt.show()
+        
+        
+>>>>>>> 7e7d3e0619662956d545d0506a2bb66cedfeb37b

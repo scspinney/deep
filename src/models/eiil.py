@@ -80,7 +80,8 @@ def pretrain_model(flags,envs,model,optimizer_pre,transform):
             optimizer_pre.zero_grad()
             loss.backward()            
             optimizer_pre.step()
-
+            # if i == 5:
+            #     break
         #optimizer_pre.step()
         #optimizer_pre.zero_grad()
         # Test
@@ -132,12 +133,13 @@ class VGG(nn.Module):
         # if init_weights:        
         self._initialize_weights()
 
-    def forward(self, x, flag=1):
+    def forward(self, x, flag=0):
         x = self.features(x)
         # x = self.avgpool(x)
         if flag == 1:
             # register the hook
-            h = x.register_hook(self.activations_hook)
+            x.requires_grad=True
+            x.register_hook(self.activations_hook)
         x = torch.flatten(x, 1)
         x = self.classifier(x)
         return x
@@ -237,14 +239,14 @@ class VGG(nn.Module):
         print(f"Block output size: {n_size}")
         return n_size
 
-def split_data_opt(envs, model, device, batch_size, n_steps=100, n_samples=-1, transform=None):
+def split_data_opt(envs, model, device, batch_size, n_steps=1, n_samples=-1, transform=None):
     """Learn soft environment assignment."""
     n_env = len(envs)    
     #image_train_paths = torch.cat([envs[i]['images'][:n_samples] for i in range(n_env-1)],0)    
     #label_train = torch.cat([envs[i]['labels'][:n_samples] for i in range(n_env-1)],0)
     image_train_paths = np.concatenate([envs[i]['images'][:n_samples] for i in range(n_env-1)],0)
     label_train = np.concatenate([envs[i]['labels'][:n_samples] for i in range(n_env-1)],0)
-    print('size of pooled envs: '+str(len(image_train_paths)))
+    print('size of pooled envs: ' +str(len(image_train_paths)))
     
     train_dataloader, pos_weight = simple_dataloader(image_train_paths,label_train,batch_size,transform)
     scale = torch.tensor(1.).to(device).requires_grad_()
@@ -268,8 +270,6 @@ def split_data_opt(envs, model, device, batch_size, n_steps=100, n_samples=-1, t
         logits_all.append(logits.detach())
         #loss_all.append(loss)
         image_paths += obj[-1]["filename_or_obj"]
-        #if i ==10:
-        #    break
     logits = torch.cat(logits_all,0).to(device)
     labels = torch.cat(labels_all,0).to(device)
     loss = nll(logits * scale, labels, pos_weight,reduction='none')
@@ -324,8 +324,8 @@ def run_eiil(flags, transform):
         print("Restart", restart)
 
         # Build environments: two groups with binary labelled data randomly assigned
-        envs = make_environment(flags)
-        n_env = len(envs)
+        init_envs = make_environment(flags)
+        n_env = len(init_envs)
         # Instantiate the model
         vgg_pre = VGG(flags).to(flags.device)
         #vgg = VGG(flags).to(flags.device)
@@ -338,11 +338,12 @@ def run_eiil(flags, transform):
         #if flags.eiil:
         start = time.time()        
         if True: # flags,envs,model,optimizer_pre,batch_size,transform
-            vgg_pre = pretrain_model(flags,envs,vgg_pre, optimizer_pre,transform)
-            envs = split_data_opt(envs, vgg_pre, flags.device, flags.batch_size, 10, -1, transform)
+            vgg_pre = pretrain_model(flags,init_envs,vgg_pre, optimizer_pre,transform)
+            envs = split_data_opt(init_envs, vgg_pre, flags.device, flags.batch_size, 10, -1, transform)
       
         end = time.time()
         print(f"EIIL ended after {end - start} seconds.")
+        inspect_env_dist(init_envs,envs)
         print(f"Starting EIIL IRM training.")
         torch.cuda.empty_cache()
         vgg = VGG(flags).to(flags.device)
@@ -391,9 +392,16 @@ def run_eiil(flags, transform):
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
+                break
             #optimizer.step()    
             #optimizer.zero_grad()
             if step % 10 == 0:
+                torch.save({
+                'epoch': step,
+                'model_state_dict': vgg.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'loss': loss,
+                }, os.path.join(flags.savedir,'vgg.pt'))
                 test_acc = []
                 for i, obj in enumerate(test_dataloader):
                     images = obj[0]
@@ -456,8 +464,9 @@ if __name__ == '__main__':
     
     print("Parsing arguments...")
     parser = ArgumentParser()
-    #parser.add_argument('--data_dir', type=str, default='/Users/sean/Projects/deep/dataset')
-    parser.add_argument('--data_dir', type=str, default='/scratch/spinney/enigma_drug/data')
+    parser.add_argument('--data_dir', type=str, default='/Users/sean/Projects/deep/dataset')
+    parser.add_argument('--savedir', type=str, default='/Users/sean/Projects/deep/models')
+    #parser.add_argument('--data_dir', type=str, default='/scratch/spinney/enigma_drug/data')
     parser.add_argument('--batch_size', default=32, type=int)
     # parser.add_argument('--max_epochs', default=15, type=int)
     parser.add_argument('--num_classes', type=int, default=2)
@@ -521,7 +530,9 @@ if __name__ == '__main__':
     [
         ScaleIntensity(),
         AddChannel(),
-        ResizeWithPadOrCrop(input_shape),
+        CropForeground(select_fn=threshold_at_one, margin=0),
+        Resize(input_shape),
+        #ResizeWithPadOrCrop(input_shape),
         EnsureType(),
     ])
 
