@@ -327,3 +327,41 @@ def simple_dataloader(image_paths,labels,batch_size,transform):
     )
     return dataloader, weight
 
+
+
+
+if __name__ == '__main__':
+    # test dataloader and view images 
+    
+    data_dir='/Users/sean/Projects/deep/dataset'        
+    batch_size=4
+    num_classes=2
+    input_shape=128
+    format='nifti'
+    cropped=True
+    
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+    if isinstance(args.input_shape,int):
+        input_shape = args.input_shape
+        args.input_shape = (args.input_shape,
+                            args.input_shape,
+                            args.input_shape)
+
+    # the preprocessing when loading images
+
+    transform = Compose(
+    [
+        ScaleIntensity(),
+        AddChannel(),
+        ResizeWithPadOrCrop(input_shape),
+        EnsureType(),
+    ])
+
+    # load test data loader 
+    envs = make_environment(args)
+    test_dataloader, pos_weight = simple_dataloader(envs[-1]['images'],envs[-1]['labels'],args.batch_size,transform)
+
+    for i in range(10):
+        img,label = next(iter(test_data_loader))
+        print(label)
