@@ -526,21 +526,13 @@ if __name__ == '__main__':
                             args.input_shape)
 
     args.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-
-    # the preprocessing when loading images
-    def threshold_at_one(x):
-        # threshold at 1
-        return x > 0
-
+    
     preprocess = Compose(
     [
-        ScaleIntensity(),
         AddChannel(),
-        CropForeground(select_fn=threshold_at_one, margin=0),
-        #Spacing(128),
-#       Resize(128),
-        ResizeWithPadOrCrop(input_shape),
+        ScaleIntensityRange(a_min=-200,a_max=200,b_min=0.0,b_max=1.0,clip=True),        
+        CropForeground(),
+        Resize(spatial_size=[input_shape,input_shape,input_shape]),     
         EnsureType(),
     ])
 

@@ -24,7 +24,7 @@ import json
 from collections import Counter
 import monai
 from monai.data import ImageDataset
-from monai.transforms import AddChannel, Compose, RandRotate90, Resize, Spacing, ResizeWithPadOrCrop, ScaleIntensity, EnsureType, RandGaussianNoise, RandAffine, Rotate, CropForeground
+from monai.transforms import AddChannel, Compose, RandRotate90, Resize, Spacing, ResizeWithPadOrCrop, ScaleIntensity, Resample, EnsureType, RandGaussianNoise, RandAffine, Rotate, CropForeground, ScaleIntensityRange
 from argparse import ArgumentParser
 import nibabel as nib
 from monai.data.image_reader import NibabelReader, has_nib
@@ -368,7 +368,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_classes', type=int, default=2)
     parser.add_argument('--num_workers', type=int, default=2)
     parser.add_argument('--num_samples', type=int, default=-1)
-    parser.add_argument('--input_shape', type=int, default=128)
+    parser.add_argument('--input_shape', type=int, default=96)
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--format', type=str, default='nifti')
     parser.add_argument('--debug', type=bool, default=False)
@@ -413,11 +413,12 @@ if __name__ == '__main__':
 
     transform = Compose(
     [
-        ScaleIntensity(),
+        #ScaleIntensity(minv=0.0, maxv=1.0),
         AddChannel(),
-        CropForeground(select_fn=threshold_at_one, margin=0),
-        Resize(input_shape),
-        #ResizeWithPadOrCrop(input_shape),
+        ScaleIntensityRange(a_min=-200,a_max=200,b_min=0.0,b_max=1.0,clip=True),        
+        CropForeground(),
+        Resize(spatial_size=[input_shape,input_shape,input_shape]),
+        #ResizeWithPadOrCrop(198),
         EnsureType(),
     ])
 
@@ -426,25 +427,27 @@ if __name__ == '__main__':
     test_dataloader, pos_weight = simple_dataloader(envs[-1]['images'],envs[-1]['labels'],args.batch_size,transform)
 
     for i in range(10):
-        img,label = next(iter(test_data_loader))
+        obj = next(iter(test_dataloader))
+        img,label = obj[:-1]
         print(label)
     
     fig, ax = plt.subplots(5,figsize = (20,20))
     fig.tight_layout()        
-    batch = next(iter(test_dataloader))
-    img,label = batch[0],batch[1]
-    img = img.squeeze()         
     row = 0
     col= 0
-    for i in range(5):            
+    w = input_shape//2
+    for i in range(5):        
+        batch = next(iter(test_dataloader))
+        img,label = batch[0],batch[1]
+        img = img.squeeze()             
         r = random.randint(60,100)       
         k = random.randint(0,2)
         if k ==0:
-            ax[i].imshow(img[80+i,:,:])
+            ax[i].imshow(img[w+i,:,:])
         elif k ==1:
-            ax[i].imshow(img[:,80+i,:])
+            ax[i].imshow(img[:,w+i,:])
         else:
-            ax[i].imshow(img[:,:,80+i])
+            ax[i].imshow(img[:,:,w+i])
     plt.show()
         
         
