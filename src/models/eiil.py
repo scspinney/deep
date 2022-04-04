@@ -80,13 +80,9 @@ def pretrain_model(flags,envs,model,optimizer_pre,transform):
             optimizer_pre.zero_grad()
             loss.backward()            
             optimizer_pre.step()
-            # if i == 5:
-            #     break
-        #optimizer_pre.step()
-        #optimizer_pre.zero_grad()
-        # Test
-        if True:
-        #if step % 10 == 0:
+
+        # Test        
+        if step % 10 == 0:
             test_acc = []
             for i, obj in enumerate(test_dataloader):
                 images = obj[0]
@@ -172,11 +168,11 @@ class VGG(nn.Module):
     def configure_optimizers(self):
         # self.hparams available because we called self.save_hyperparameters()
         if self.hparams.optim == 'adam':
-            optim = torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate, weight_decay=1e-4)
+            optim = torch.optim.Adam(self.parameters(), lr=self.hparams.lr, weight_decay=1e-4)
         elif self.hparams.optim == 'sgd':
-            optim = torch.optim.SGD(self.parameters(), lr=self.hparams.learning_rate, weight_decay=1e-4)
+            optim = torch.optim.SGD(self.parameters(), lr=self.hparams.lr, weight_decay=1e-4)
         elif self.hparams.optim == 'adamw':
-            optim = torch.optim.AdamW(self.parameters(), lr=self.hparams.learning_rate)
+            optim = torch.optim.AdamW(self.parameters(), lr=self.hparams.lr)
 
         else:
             raise NotImplementedError
@@ -337,7 +333,7 @@ def run_eiil(flags, transform):
 
         #if flags.eiil:
         start = time.time()        
-        if True: # flags,envs,model,optimizer_pre,batch_size,transform
+        if flags.eiil: # flags,envs,model,optimizer_pre,batch_size,transform
             vgg_pre = pretrain_model(flags,init_envs,vgg_pre, optimizer_pre,transform)
             envs = split_data_opt(init_envs, vgg_pre, flags.device, flags.batch_size, 10, -1, transform)
       
@@ -392,7 +388,6 @@ def run_eiil(flags, transform):
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
-                break
             #optimizer.step()    
             #optimizer.zero_grad()
             if step % 10 == 0:
@@ -469,7 +464,6 @@ if __name__ == '__main__':
     parser.add_argument('--savedir', type=str, default='/scratch/spinney/enigma_drug/')
     parser.add_argument('--data_dir', type=str, default='/scratch/spinney/enigma_drug/data')
     parser.add_argument('--batch_size', default=32, type=int)
-    # parser.add_argument('--max_epochs', default=15, type=int)
     parser.add_argument('--num_classes', type=int, default=2)
     parser.add_argument('--num_workers', type=int, default=2)
     parser.add_argument('--num_samples', type=int, default=-1)
@@ -482,10 +476,9 @@ if __name__ == '__main__':
     parser.add_argument('--augment', nargs='*')
     parser.add_argument('--cfg_name', type=str, default='A')
     parser.add_argument('--classifier_cfg', type=str, default='A')
-    parser.add_argument('--max_epochs', default=40, type=int)
 
     # model params
-    parser.add_argument('--learning_rate', type=float, default=0.001)
+    #parser.add_argument('--learning_rate', type=float, default=0.001)
     parser.add_argument('--dropout', type=float, default=0.5)
     parser.add_argument('--name', type=str, default='vggnet')
     parser.add_argument('--optim', type=str, default='adam')
@@ -500,7 +493,7 @@ if __name__ == '__main__':
     parser.add_argument('--steps', type=int, default=50)
     parser.add_argument('--pretrain_steps', type=int, default=1)
     parser.add_argument('--grayscale_model', action='store_true')
-    parser.add_argument('--eiil', action='store_true')
+    parser.add_argument('--eiil', type=bool, default=True)    
 
     args = parser.parse_args()
 
