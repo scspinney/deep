@@ -332,7 +332,6 @@ def simple_dataloader(image_paths,labels,batch_size,transform):
 
 
 
-=======
 def inspect_env_dist(init_envs,new_envs):
 
     # combine informations from both init_envs

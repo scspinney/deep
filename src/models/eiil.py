@@ -464,9 +464,10 @@ if __name__ == '__main__':
     
     print("Parsing arguments...")
     parser = ArgumentParser()
-    parser.add_argument('--data_dir', type=str, default='/Users/sean/Projects/deep/dataset')
-    parser.add_argument('--savedir', type=str, default='/Users/sean/Projects/deep/models')
-    #parser.add_argument('--data_dir', type=str, default='/scratch/spinney/enigma_drug/data')
+    #parser.add_argument('--data_dir', type=str, default='/Users/sean/Projects/deep/dataset')
+    #parser.add_argument('--savedir', type=str, default='/Users/sean/Projects/deep/models')
+    parser.add_argument('--savedir', type=str, default='/scratch/spinney/enigma_drug/')
+    parser.add_argument('--data_dir', type=str, default='/scratch/spinney/enigma_drug/data')
     parser.add_argument('--batch_size', default=32, type=int)
     # parser.add_argument('--max_epochs', default=15, type=int)
     parser.add_argument('--num_classes', type=int, default=2)
@@ -526,13 +527,20 @@ if __name__ == '__main__':
 
     args.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
+
+    # the preprocessing when loading images
+    def threshold_at_one(x):
+        # threshold at 1
+        return x > 0
+
     preprocess = Compose(
     [
         ScaleIntensity(),
         AddChannel(),
         CropForeground(select_fn=threshold_at_one, margin=0),
-        Resize(input_shape),
-        #ResizeWithPadOrCrop(input_shape),
+        #Spacing(128),
+#       Resize(128),
+        ResizeWithPadOrCrop(input_shape),
         EnsureType(),
     ])
 
