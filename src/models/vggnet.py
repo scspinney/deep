@@ -20,6 +20,9 @@ class VGG(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
 
+        if self.hparams.num_classes == 2:
+            self.hparams.num_classes = 1
+
         self.features = self.make_layers()
         self.avgpool = nn.AdaptiveAvgPool3d((7, 7, 7))
         self.n_size = self._get_block_output(self.hparams.input_shape)
@@ -196,10 +199,10 @@ def main():
     # ------------
     print("Parsing arguments...")
     parser = ArgumentParser()
-    parser.add_argument('--data_dir', type=str, default='/Users/sean/Projects/deep/dataset')
-    parser.add_argument('--batch_size', default=8, type=int)
+    parser.add_argument('--data_dir', type=str, default='/network/scratch/s/sean.spinney/deep/data')
+    parser.add_argument('--batch_size', default=32, type=int)
     # parser.add_argument('--max_epochs', default=15, type=int)
-    parser.add_argument('--num_classes', type=int, default=5)
+    parser.add_argument('--num_classes', type=int, default=2)
     parser.add_argument('--num_workers', type=int, default=2)
     parser.add_argument('--num_samples', type=int, default=-1)
     parser.add_argument('--input_shape', type=int, default=128)
@@ -260,7 +263,7 @@ def main():
     slurm = os.environ.get("SLURM_JOB_NUM_NODES")
     num_nodes = int(slurm) if slurm else 1
 
-    default_root_dir = f"/Users/sean/Projects/deep/dataset/checkpoints/vggnet/"
+    default_root_dir = f"/network/scratch/s/sean.spinney/deep/checkpoints/vggnet/"
     early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=0.00, patience=5, verbose=False, mode="max")
 
     trainer = pl.Trainer(

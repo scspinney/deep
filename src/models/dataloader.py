@@ -76,21 +76,23 @@ class Subsample(object):
 
 
 
-def class_imbalance_sampler(labels):
+def class_imbalance_sampler(labels, test=False):
 
     class_sample_count = torch.tensor(
         [(labels == t).sum() for t in torch.unique(labels, sorted=True)])
 
     print(f"Class_count: {class_sample_count}")
 
-    weight = 1. / class_sample_count.float()
+    #weight = 1. / class_sample_count.float()
+    weight = class_sample_count.float() / class_sample_count.float().sum()
 
     samples_weight = torch.tensor([weight[t] for t in labels])
 
     # Create sampler, dataset, loader
-    sampler = WeightedRandomSampler(samples_weight, len(samples_weight),replacement=True)
-
-    return sampler, weight
+    replacement = True if not test else False
+    sampler = WeightedRandomSampler(samples_weight, len(samples_weight),replacement=replacement)
+    
+    return sampler, class_sample_count
 
 
 class MRIDataModuleIO(pl.LightningDataModule):
@@ -229,7 +231,7 @@ class MRIDataModuleIO(pl.LightningDataModule):
 
 def get_mri_data_beta(num_samples,num_classes, data_dir, cropped=False):
 
-    name = f"data_split_c.csv"
+    name = f"data_split.csv"
     class_name = "dep" if num_classes == 2 else "class"
     N = num_samples // num_classes
     df = pd.read_csv(os.path.join(data_dir, name))
@@ -264,10 +266,11 @@ def make_environment(flags):
     data_dir = flags.data_dir
     input_shape = flags.input_shape
     batch_size = flags.batch_size
-    name = f"data_split_c.csv"
+    name = f"data_split.csv"
     class_name = "dep"    
     df = pd.read_csv(os.path.join(data_dir, name))
     K = df.shape[0]
+    #K = 800
     shuffled_ind = np.random.choice(range(K), len(range(K)), replace=False)
     image_train_paths = np.array(df["filename"].values[shuffled_ind])
     label_train = np.array(df[class_name].values[shuffled_ind])
@@ -275,41 +278,42 @@ def make_environment(flags):
     age = np.array(df["age"].values[shuffled_ind])
     class_type = np.array(df["class"].values[shuffled_ind])
     sex = np.array(df["sex"].values[shuffled_ind])
+    n_train = 100
     envs = [
         {
-                'images': image_train_paths[:K//2-50],
-                'labels': label_train[:K//2-50],
-                'drug': drug[:K//2-50],
-                'age': age[:K//2-50],
-                'sex': sex[:K//2-50],
-                'class': class_type[:K//2-50]
+                'images': image_train_paths[:K//2-n_train],
+                'labels': label_train[:K//2-n_train],
+                'drug': drug[:K//2-n_train],
+                'age': age[:K//2-n_train],
+                'sex': sex[:K//2-n_train],
+                'class': class_type[:K//2-n_train]
         },
         {
-                'images': image_train_paths[K//2-50:-50],
-                'labels': label_train[K//2-50:-50],
-                'drug': drug[K//2-50:-50],
-                'age': age[K//2-50:-50],
-                'sex': sex[K//2-50:-50],
-                'class': class_type[K//2-50:-50]                
+                'images': image_train_paths[K//2-n_train:-n_train],
+                'labels': label_train[K//2-n_train:-n_train],
+                'drug': drug[K//2-n_train:-n_train],
+                'age': age[K//2-n_train:-n_train],
+                'sex': sex[K//2-n_train:-n_train],
+                'class': class_type[K//2-n_train:-n_train]                
         },
         {
-                'images': image_train_paths[-100:],
-                'labels': label_train[-100:],
-                'drug': drug[-100:],
-                'age': age[-100:],
-                'sex': sex[-100:],
-                'class': class_type[-100:]                
+                'images': image_train_paths[-n_train:],
+                'labels': label_train[-n_train:],
+                'drug': drug[-n_train:],
+                'age': age[-n_train:],
+                'sex': sex[-n_train:],
+                'class': class_type[-n_train:]                
         }
         ]
             
     return envs
 
 
-def simple_dataloader(image_paths,labels,batch_size,transform):
+def simple_dataloader(image_paths,labels,batch_size,transform,num_workers=0,test=False):
     if isinstance(labels,np.ndarray):
         labels = torch.tensor(labels)
 
-    train_sampler, weight = class_imbalance_sampler(labels)
+    train_sampler, weight = class_imbalance_sampler(labels,test)
     train_set = ImageDataset(
         image_files=image_paths, 
         labels=labels,
@@ -321,8 +325,10 @@ def simple_dataloader(image_paths,labels,batch_size,transform):
         train_set, 
         batch_size, 
         sampler=train_sampler, 
-        num_workers=0,
-        drop_last=True,
+        num_workers=num_workers,
+        drop_last=True if not test else False,
     )
-    return dataloader, weight
+
+    pos_weight = weight[0]/weight[1]
+    return dataloader, pos_weight
 

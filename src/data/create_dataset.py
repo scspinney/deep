@@ -128,7 +128,7 @@ if __name__ == '__main__':
 
 
     parser = ArgumentParser()
-    parser.add_argument('--main_path', type=str, default='/scratch/spinney/enigma')
+    parser.add_argument('--main_path', type=str, default='/network/scratch/s/sean.spinney/deep/data')
     parser.add_argument('--demo_fname', type=str, default='Mega-Analysis_demographic_data.xls')
 
     args = parser.parse_args()
